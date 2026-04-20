@@ -36,11 +36,215 @@
 
   const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
+  // YAML subset scalar parser: numbers (\d+(\.\d+)?), double-quoted
+  // strings, and unquoted text (treated as a literal trimmed string).
+  // YAML reserved words (true/false/null/~/yes/no) are kept as literal
+  // strings -- we stay subset-strict rather than interpret booleans.
+  const YAML_NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
+  const parseYamlScalar = (raw) => {
+    const s = raw.trim();
+    if (s === "") return { ok: false };
+    if (YAML_NUMBER_RE.test(s)) return { ok: true, value: parseFloat(s) };
+    if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+      const inner = s.slice(1, -1);
+      // Reject anything with control chars or embedded quotes; we do
+      // not implement YAML escaping for v0.2.0.
+      if (inner.includes('"') || inner.includes("\\")) return { ok: false };
+      return { ok: true, value: inner };
+    }
+    return { ok: true, value: s };
+  };
+
+  // Parse the body that follows `data:` into either a flat series
+  // (array of {x,y,...} maps) or a map of named series. Returns
+  // { ok: true, value } or { ok: false } on unsupported shape.
+  //
+  // Caller provides `lines`: the raw lines AFTER the `data:` declaration
+  // (the header itself is already consumed). Each line is the original
+  // text; tabs in any leading indent reject the whole parse.
+  //
+  // Shape detection:
+  //   - No non-blank indented lines  -> null (empty data).
+  //   - First non-blank line is `  - ...` -> flat series.
+  //   - First non-blank line is `  name:` -> map of named series.
+  const parseDataSection = (lines) => {
+    // Find the first non-blank line and its indent.
+    let first = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() !== "") {
+        first = i;
+        break;
+      }
+    }
+    if (first === -1) return { ok: true, value: null };
+
+    // Reject tabs in any leading whitespace. Must run before the
+    // baseIndent==0 early-return so a tab-led line (whose leading-space
+    // count is zero) still rejects the whole frontmatter.
+    for (const line of lines) {
+      const lead = line.match(/^(\s*)/)[1];
+      if (lead.includes("\t")) return { ok: false };
+    }
+
+    const baseIndent = lines[first].match(/^( *)/)[1].length;
+    if (baseIndent === 0) return { ok: true, value: null };
+
+    const firstContent = lines[first].slice(baseIndent);
+    if (firstContent.startsWith("- ") || firstContent === "-") {
+      return parseSeriesList(lines, baseIndent);
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*\s*:/.test(firstContent)) {
+      return parseSeriesMap(lines, baseIndent);
+    }
+    return { ok: false };
+  };
+
+  // Parse a block-style list of maps at the given indent:
+  //   - x: 1
+  //     y: 10
+  //   - x: 2
+  //     y: 20
+  // Every list item is a `- ` line optionally followed by further
+  // indented key:value lines that belong to the same map.
+  const parseSeriesList = (lines, baseIndent) => {
+    const items = [];
+    let current = null;
+    let childIndent = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim() === "") continue;
+      const lead = line.match(/^( *)/)[1].length;
+      if (lead < baseIndent) return { ok: false };
+      const content = line.slice(baseIndent);
+      if (lead === baseIndent) {
+        if (!content.startsWith("- ") && content !== "-") return { ok: false };
+        current = {};
+        items.push(current);
+        const rest = content === "-" ? "" : content.slice(2);
+        if (rest !== "") {
+          const m = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/);
+          if (!m) return { ok: false };
+          const val = parseYamlScalar(m[2]);
+          if (!val.ok) return { ok: false };
+          current[m[1]] = val.value;
+          // Child indent is baseIndent + 2 (the '- ' width).
+          if (childIndent === -1) childIndent = baseIndent + 2;
+        }
+      } else {
+        if (!current) return { ok: false };
+        if (childIndent === -1) childIndent = lead;
+        if (lead !== childIndent) return { ok: false };
+        const kv = content
+          .slice(lead - baseIndent)
+          .match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/);
+        if (!kv) return { ok: false };
+        const val = parseYamlScalar(kv[2]);
+        if (!val.ok) return { ok: false };
+        current[kv[1]] = val.value;
+      }
+    }
+    return { ok: true, value: items };
+  };
+
+  // Parse a map of named series at the given indent:
+  //   counter:
+  //     - x: 1
+  //       y: 10
+  //   sales:
+  //     - x: 1
+  //       y: 100
+  // Each top-level key names a series; its value MUST be a list of maps
+  // at a deeper indent.
+  const parseSeriesMap = (lines, baseIndent) => {
+    const out = {};
+    let currentKey = null;
+    let childLines = null;
+    let childIndent = -1;
+    const flushChild = () => {
+      if (currentKey === null) return true;
+      if (!childLines || childLines.length === 0) return false;
+      const sub = parseSeriesList(childLines, childIndent);
+      if (!sub.ok) return false;
+      out[currentKey] = sub.value;
+      currentKey = null;
+      childLines = null;
+      childIndent = -1;
+      return true;
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim() === "") {
+        if (childLines) childLines.push(line);
+        continue;
+      }
+      const lead = line.match(/^( *)/)[1].length;
+      if (lead < baseIndent) return { ok: false };
+      if (lead === baseIndent) {
+        if (!flushChild()) return { ok: false };
+        const content = line.slice(baseIndent);
+        const m = content.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$/);
+        if (!m) return { ok: false };
+        currentKey = m[1];
+        childLines = [];
+      } else {
+        if (currentKey === null) return { ok: false };
+        if (childIndent === -1) childIndent = lead;
+        if (lead < childIndent) return { ok: false };
+        childLines.push(line);
+      }
+    }
+    if (!flushChild()) return { ok: false };
+    return { ok: true, value: out };
+  };
+
   const parseFrontmatter = (text) => {
     const meta = {};
-    for (const line of text.split(/\r?\n/)) {
+    const errors = [];
+    const lines = text.split(/\r?\n/);
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      // Skip blank lines quickly.
+      if (line.trim() === "") {
+        i++;
+        continue;
+      }
+      // `data:` triggers the indent-aware sub-parser. We don't try to
+      // parse data: inline -- even `data: []` is out of scope (flow
+      // style is excluded from the subset).
+      if (/^\s*data\s*:\s*$/.test(line)) {
+        // Gather all following lines until we hit a top-level key or
+        // EOF. A "top-level key" is a key: line with zero leading
+        // whitespace (same indent level as `data:` itself). We tolerate
+        // indented continuation lines between, including blanks.
+        const sectionLines = [];
+        let j = i + 1;
+        while (j < lines.length) {
+          const l = lines[j];
+          if (l.trim() === "") {
+            sectionLines.push(l);
+            j++;
+            continue;
+          }
+          // Top-level key means zero leading whitespace plus `ident:`.
+          if (/^[A-Za-z_][A-Za-z0-9_]*\s*:/.test(l)) break;
+          sectionLines.push(l);
+          j++;
+        }
+        const parsed = parseDataSection(sectionLines);
+        if (parsed.ok) {
+          meta.data = parsed.value;
+        } else {
+          errors.push("Unsupported data: frontmatter shape");
+        }
+        i = j;
+        continue;
+      }
       const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$/);
-      if (!m) continue;
+      if (!m) {
+        i++;
+        continue;
+      }
       const [, key, raw] = m;
       if (key === "size") {
         const s = raw.match(/^(\d+)\s*[xX]\s*(\d+)$/);
@@ -48,7 +252,9 @@
       } else if (key === "theme") {
         meta.theme = raw;
       }
+      i++;
     }
+    if (errors.length) meta._errors = errors;
     return meta;
   };
 
@@ -107,6 +313,18 @@
   // not a native alert).
   const NAME_RE = /::\s*([A-Za-z_]\w*)\s*$/;
   const REF_RE = /^&([A-Za-z_]\w*)/;
+
+  // Data references `@ident` inside a box body. The sigil is greedy
+  // about letters but conservative about boundaries -- `@` is only a
+  // sigil when preceded by `[`, `(`, whitespace, or start-of-string
+  // AND followed by an ident then whitespace / `|` / `]` / `)` /
+  // end-of-string. This keeps `user@example.com` literal.
+  const DATAREF_IDENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)/;
+  const isDataRefBoundary = (prevCh, nextCh) => {
+    if (prevCh !== "" && !/[\s[(]/.test(prevCh)) return false;
+    if (nextCh === "" || nextCh === undefined) return true;
+    return /[\s|\])]/.test(nextCh);
+  };
 
   // Flow-edge tokens recognised between sibling nodes on the same line:
   //
@@ -235,6 +453,20 @@
         }
         textBuf += c;
         i++;
+      } else if (c === "@") {
+        const prevCh = i === 0 ? "" : s[i - 1];
+        const identMatch = s.slice(i + 1).match(DATAREF_IDENT_RE);
+        if (identMatch) {
+          const nextCh = s[i + 1 + identMatch[0].length] ?? "";
+          if (isDataRefBoundary(prevCh, nextCh)) {
+            flushText();
+            lineItems.push({ type: "dataRef", name: identMatch[1] });
+            i += 1 + identMatch[0].length;
+            continue;
+          }
+        }
+        textBuf += c;
+        i++;
       } else if (c === "<" || c === "-") {
         const match = s.slice(i).match(EDGE_RE);
         const token = match ? match[0] : "";
@@ -264,6 +496,16 @@
     return items;
   };
 
+  // Trailing `| <renderer>` marker on a box body. Whitespace on both
+  // sides of the pipe is required so it doesn't collide with labels
+  // that naturally contain '|' (e.g. "foo | bar" meaning "or"). The
+  // FIRST pipe wins -- a body like `@data | bar | text` parses as
+  // renderer `bar` (extras like `| text` are treated as literal text
+  // stripped along with the first marker). We match the leftmost
+  // ` | <ident>` in a chain that extends to end-of-string.
+  const RENDERER_RE =
+    /\s+\|\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+\|\s+[A-Za-z_][A-Za-z0-9_]*)*\s*$/;
+
   // Parse a single box, given the slice that starts with '[' or '(' and
   // ends with the matching ']' or ')'.
   const parseBracketedNode = (s) => {
@@ -287,6 +529,12 @@
       name = m[1];
       body = clean.slice(0, m.index).trimEnd();
     }
+    let renderer;
+    const r = body.match(RENDERER_RE);
+    if (r) {
+      renderer = r[1];
+      body = body.slice(0, r.index).trimEnd();
+    }
     const box = {
       type: "box",
       bordered,
@@ -294,6 +542,7 @@
       items: parseItems(body),
     };
     if (name) box.name = name;
+    if (renderer) box.renderer = renderer;
     return box;
   };
 
@@ -468,6 +717,7 @@
 
     const nameMap = new Map();
     const errors = [];
+    if (Array.isArray(meta._errors)) errors.push(...meta._errors);
     collectNames(root, nameMap, errors);
     resolveRefs(root, nameMap, errors);
     if (errors.length) {
@@ -938,6 +1188,169 @@
     return result;
   };
 
+  // ---- chart renderers -------------------------------------------------
+  //
+  // A `| renderer` marker on a box body routes rendering through this
+  // table (distinct from the top-level `renderers` map, which is the
+  // output backend -- ASCII / SVG / PNG). Each chart renderer takes
+  // the box, its items, the resolved data ref value (if any), and the
+  // theme's box-drawing chars, and returns an array of text strings
+  // that REPLACE the box's items (one text item per row).
+  //
+  // Resolution happens in `resolveChartRenderer` below -- it inspects
+  // the box's items, finds the single dataRef / literal text, looks
+  // it up against `ast.meta.data`, and dispatches. Errors short-
+  // circuit to a single inline `⚠ ...` row.
+  const BAR_WIDTH_DEFAULT = 10;
+  const BAR_GLYPH = "\u2588";
+
+  const chartRenderers = {
+    text(box, items, refValue, hasRef, bc) {
+      if (!hasRef) {
+        // Pass-through: keep the original items; caller detects this
+        // case and leaves items untouched.
+        return null;
+      }
+      return [JSON.stringify(refValue)];
+    },
+
+    bar(box, items, refValue, hasRef, bc, budgetW) {
+      if (!hasRef) return ["\u26a0 bar: use @ref"];
+      if (!Array.isArray(refValue)) {
+        return ["\u26a0 bar: expected [{x,y}]"];
+      }
+      if (refValue.length === 0) return ["\u26a0 bar: empty series"];
+      const seenX = new Set();
+      for (const entry of refValue) {
+        if (!entry || typeof entry !== "object") {
+          return ["\u26a0 bar: expected [{x,y}]"];
+        }
+        if (!("x" in entry) || !("y" in entry)) {
+          return ["\u26a0 bar: expected [{x,y}]"];
+        }
+        if (typeof entry.y !== "number" || Number.isNaN(entry.y)) {
+          return ["\u26a0 bar: expected [{x,y}]"];
+        }
+        if (entry.y < 0) return ["\u26a0 bar: negative y"];
+        const xKey = String(entry.x);
+        if (seenX.has(xKey)) {
+          return [`\u26a0 bar: duplicate x "${xKey}"`];
+        }
+        seenX.add(xKey);
+      }
+      // Left labels (the `x` column). Pad to a uniform width so every
+      // row's separator lines up.
+      const labels = refValue.map((e) => String(e.x));
+      const labelW = labels.reduce((m, s) => Math.max(m, s.length), 0);
+      const values = refValue.map((e) => `(${e.y})`);
+      const valueW = values.reduce((m, s) => Math.max(m, s.length), 0);
+      const maxY = refValue.reduce((m, e) => Math.max(m, e.y), 0);
+      const budget = Math.max(1, budgetW ?? BAR_WIDTH_DEFAULT);
+      const barCells = (y) => {
+        if (maxY === 0) return 0;
+        return Math.round((y / maxY) * budget);
+      };
+      return refValue.map((entry, i) => {
+        const label = labels[i].padStart(labelW, " ");
+        const bars = BAR_GLYPH.repeat(barCells(entry.y));
+        const valStr = values[i].padStart(valueW, " ");
+        const body = (
+          bars + " ".repeat(Math.max(1, budget - bars.length + 1))
+        ).slice(0, budget + 1);
+        return `${label} ${bc.v} ${body}${valStr} ${bc.v}`;
+      });
+    },
+  };
+
+  // Inspect a renderer-tagged box and rewrite its items to either the
+  // renderer's output rows or an inline `⚠ error` row. Returns the
+  // rewritten items array; leaves non-renderer boxes untouched.
+  //
+  // `dataMap` is the resolved frontmatter `meta.data` (flat list or
+  // map of named series). `budgetW` is the content-width budget the
+  // containing box is willing to devote to the renderer's visuals.
+  const applyChartRenderer = (box, dataMap, bc, budgetW) => {
+    const name = box.renderer;
+    const handler = chartRenderers[name];
+    const items = box.items || [];
+    const inlineError = (msg) => [{ type: "text", content: msg }];
+
+    if (!handler) return inlineError(`\u26a0 unknown renderer: ${name}`);
+
+    // A renderer-tagged body admits exactly one of:
+    //   - a single dataRef item       (renderer sees refValue)
+    //   - a single text/literal item  (renderer sees raw string)
+    //   - a mix / multi-item body     (treat as raw text w/ first text)
+    // Any other shape falls back to "raw string" path.
+    const dataRefs = items.filter((it) => it && it.type === "dataRef");
+    const hasRef = dataRefs.length > 0;
+
+    if (hasRef) {
+      const ref = dataRefs[0];
+      if (!dataMap || typeof dataMap !== "object") {
+        return inlineError(`\u26a0 @${ref.name} not found`);
+      }
+      let refValue;
+      // Flat list: only `@data` resolves.
+      if (Array.isArray(dataMap)) {
+        if (ref.name !== "data") {
+          return inlineError(`\u26a0 @${ref.name} not found`);
+        }
+        refValue = dataMap;
+      } else {
+        if (!(ref.name in dataMap)) {
+          return inlineError(`\u26a0 @${ref.name} not found`);
+        }
+        refValue = dataMap[ref.name];
+      }
+      const rendered = handler(box, items, refValue, true, bc, budgetW);
+      return rendered
+        ? rendered.map((r) => ({ type: "text", content: r }))
+        : items;
+    }
+
+    // No dataRef. Text renderer keeps the literal content; others
+    // reject the raw-string input.
+    if (name !== "text") {
+      return inlineError(`\u26a0 ${name}: use @ref`);
+    }
+    return items;
+  };
+
+  // Walk the AST *before* rendering; for any box carrying a renderer
+  // tag, rewrite its items. Also flags any box that holds a dataRef
+  // WITHOUT a renderer -- that's the "bare @ref" error case.
+  const applyChartRenderers = (item, dataMap, bc, budgetW) => {
+    if (!item || typeof item !== "object") return;
+    if (item.type === "box") {
+      if (item.renderer && !item._rendererApplied) {
+        item.items = applyChartRenderer(item, dataMap, bc, budgetW);
+        item._rendererApplied = true;
+      } else if (!item.renderer && Array.isArray(item.items)) {
+        const bareRef = item.items.find((it) => it && it.type === "dataRef");
+        if (bareRef) {
+          item.items = [
+            {
+              type: "text",
+              content: `\u26a0 @${bareRef.name}: requires | renderer`,
+            },
+          ];
+        }
+      }
+    }
+    if (Array.isArray(item.items)) {
+      for (const child of item.items)
+        applyChartRenderers(child, dataMap, bc, budgetW);
+    }
+    if (item.type === "row" && Array.isArray(item.items)) {
+      for (const child of item.items)
+        applyChartRenderers(child, dataMap, bc, budgetW);
+    }
+    if (item.type === "edge" && item.label) {
+      applyChartRenderers(item.label, dataMap, bc, budgetW);
+    }
+  };
+
   // Render a box AST to a flat array of rows. When targetW / targetH are
   // provided, the box is forced to those outer dimensions; otherwise it
   // auto-sizes to its content plus natural padding.
@@ -1181,6 +1594,16 @@
   const renderRows = (ast) => {
     const bc = boxChars(ast);
     const size = ast.meta?.size;
+    // One-shot rewrite for any `| renderer`-tagged boxes. Idempotent --
+    // tagged boxes get their items replaced in place, so a second call
+    // would re-apply to already-rendered text items (harmless but
+    // pointless). We reset `renderer` on the box after consumption.
+    // Bar width budget: default 10 cells; when the root has a narrower
+    // explicit size, shrink. (Wider sizes stay at 10 -- the author
+    // asked for a bar chart, not a giant.)
+    const barBudget =
+      size?.w !== undefined ? Math.min(BAR_WIDTH_DEFAULT, size.w) : undefined;
+    applyChartRenderers(ast, ast.meta?.data, bc, barBudget);
     const rows = renderBoxRows(ast, bc, {
       targetW: size?.w,
       targetH: size?.h,
