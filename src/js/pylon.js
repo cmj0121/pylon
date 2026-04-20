@@ -52,6 +52,101 @@
     return meta;
   };
 
+  // Find the matching close bracket for s[start] (which must be '[' or '(').
+  // Counts only the same bracket kind -- well-formed input has () and [] pairs
+  // nested independently.
+  const findMatching = (s, start) => {
+    const open = s[start];
+    const close = open === "[" ? "]" : open === "(" ? ")" : null;
+    if (!close) return -1;
+    let depth = 0;
+    for (let i = start; i < s.length; i++) {
+      if (s[i] === open) depth++;
+      else if (s[i] === close) {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  };
+
+  // Extract leading / trailing '-' alignment springs from an inner string.
+  const ALIGN_LEFT_RE = /^\s*-\s+/;
+  const ALIGN_RIGHT_RE = /\s+-\s*$/;
+  const extractAlign = (inner) => {
+    const hasLeft = ALIGN_LEFT_RE.test(inner);
+    const hasRight = ALIGN_RIGHT_RE.test(inner);
+    let align = "center";
+    if (hasLeft && !hasRight) align = "right";
+    else if (!hasLeft && hasRight) align = "left";
+    const clean = inner
+      .replace(ALIGN_LEFT_RE, "")
+      .replace(ALIGN_RIGHT_RE, "")
+      .trim();
+    return { align, clean };
+  };
+
+  // Split the inner content of a box into an ordered list of items.
+  // Items are either child nodes or text runs; newlines break text into
+  // separate items so multi-line content stacks vertically.
+  const parseItems = (s) => {
+    const items = [];
+    let textBuf = "";
+    const flushText = () => {
+      const t = textBuf.trim();
+      if (t) items.push({ type: "text", content: t });
+      textBuf = "";
+    };
+    let i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (c === "[" || c === "(") {
+        flushText();
+        const end = findMatching(s, i);
+        if (end < 0) {
+          // Unmatched: swallow as literal text so parsing stays lenient.
+          textBuf += c;
+          i++;
+          continue;
+        }
+        items.push(parseBracketedNode(s.slice(i, end + 1)));
+        i = end + 1;
+      } else if (c === "\n") {
+        flushText();
+        i++;
+      } else {
+        textBuf += c;
+        i++;
+      }
+    }
+    flushText();
+    return items;
+  };
+
+  // Parse a single box, given the slice that starts with '[' or '(' and
+  // ends with the matching ']' or ')'.
+  const parseBracketedNode = (s) => {
+    const open = s[0];
+    const bordered = open === "[";
+    const close = bordered ? "]" : ")";
+    if (!s.endsWith(close)) {
+      return {
+        type: "box",
+        bordered: true,
+        align: "center",
+        items: [{ type: "text", content: s.trim() }],
+      };
+    }
+    const inner = s.slice(1, -1);
+    const { align, clean } = extractAlign(inner);
+    return {
+      type: "box",
+      bordered,
+      align,
+      items: parseItems(clean),
+    };
+  };
+
   const parse = (source) => {
     const src = (source ?? "").trim();
     if (!src) return parse(DEFAULT_EXAMPLE);
@@ -65,36 +160,20 @@
       if (!body) body = DEFAULT_EXAMPLE;
     }
 
-    let bordered = true;
-    let inner = body;
-    if (body.startsWith("[") && body.endsWith("]")) {
-      bordered = true;
-      inner = body.slice(1, -1);
-    } else if (body.startsWith("(") && body.endsWith(")")) {
-      bordered = false;
-      inner = body.slice(1, -1);
+    let root;
+    if (body.startsWith("[") || body.startsWith("(")) {
+      root = parseBracketedNode(body);
+    } else {
+      // Implicit bordered root around bare text.
+      root = {
+        type: "box",
+        bordered: true,
+        align: "center",
+        items: [{ type: "text", content: body }],
+      };
     }
-
-    // Leading / trailing '-' act as alignment springs that push content
-    // away from the dash. The default (no dash) is center.
-    //   [ xxx ]      center (default; visually balanced)
-    //   [- xxx -]    center (explicit; same effect)
-    //   [- xxx  ]    right  (spring at left pushes content right)
-    //   [  xxx -]    left   (spring at right pushes content left)
-    const leadingDash = /^\s*-\s+/;
-    const trailingDash = /\s+-\s*$/;
-    const hasLeft = leadingDash.test(inner);
-    const hasRight = trailingDash.test(inner);
-    let align = "center";
-    if (hasLeft && !hasRight) align = "right";
-    else if (!hasLeft && hasRight) align = "left";
-
-    const label = inner
-      .replace(leadingDash, "")
-      .replace(trailingDash, "")
-      .trim();
-
-    return { type: "box", label, bordered, align, meta };
+    root.meta = meta;
+    return root;
   };
 
   // ---- display width ----------------------------------------------------
@@ -159,98 +238,124 @@
     return w;
   };
 
-  // ---- layout -----------------------------------------------------------
-  // Resolve outer dimensions, padding, and (if needed) a truncated label
-  // from the AST's meta.size. Shared by ASCII / SVG / PNG renderers so the
-  // three backends agree on what they are drawing.
+  // ---- layout / row rendering ------------------------------------------
+  // Recursively reduce an AST into a flat array of text rows. Each row is
+  // a string of display cells ready to paint. Nested boxes render as their
+  // own multi-row box (ASCII glyphs + alignment); borderless wrappers just
+  // pass their items' rows through. Every backend (ASCII / SVG / PNG)
+  // consumes these rows so they all agree on shape and alignment.
   //
-  //  - natural-pad  3 cells on each side of the label when no size is set
-  //  - cell -> px   10 wide, 20 tall for SVG / PNG when size *is* set;
-  //                 the legacy auto formula stays in place otherwise, so
-  //                 unsized boxes render at the same size as before
+  //  - natural-pad  3 cells on each side of content in a bordered box
+  //  - cell -> px   10 wide, 20 tall for SVG / PNG
   const NATURAL_PAD = 3;
   const CELL_PX_W = 10;
   const CELL_PX_H = 20;
 
-  // Distribute `slack` cells (or pixels) between leftPad and rightPad
-  // according to the alignment. For center / left / right the content
-  // hugs the named edge; minPad keeps it from touching the border wall
-  // unless the slack is too small for even that.
-  const distributePad = (slack, align, minPad) => {
-    if (slack <= 2 * minPad) {
+  // Pad a single row (string) to targetW display cells, placing the row
+  // according to align ('left' | 'center' | 'right'). Reserve minPad
+  // cells on the pushed-against edge so left / right alignment keeps
+  // the content off the border wall unless the slack is too tight.
+  const padRow = (row, targetW, align, minPad = 1) => {
+    const rowW = displayWidth(row);
+    const slack = Math.max(0, targetW - rowW);
+    if (slack === 0) return row;
+    if (slack <= 2 * minPad || align === "center") {
       const l = Math.floor(slack / 2);
-      return { leftPad: l, rightPad: slack - l };
+      return " ".repeat(l) + row + " ".repeat(slack - l);
     }
     if (align === "right") {
-      return { leftPad: slack - minPad, rightPad: minPad };
+      return " ".repeat(slack - minPad) + row + " ".repeat(minPad);
     }
-    if (align === "left") {
-      return { leftPad: minPad, rightPad: slack - minPad };
-    }
-    const l = Math.floor(slack / 2);
-    return { leftPad: l, rightPad: slack - l };
+    return " ".repeat(minPad) + row + " ".repeat(slack - minPad);
   };
 
-  const layout = (ast) => {
-    const { label, meta = {}, align = "center" } = ast;
-    const rawLabelW = displayWidth(label);
-    const autoCellsW = rawLabelW + NATURAL_PAD * 2 + 2;
-    const autoCellsH = 3;
-
-    const hasSize = !!meta.size;
-    const outerCellsW = hasSize ? meta.size.w : autoCellsW;
-    const outerCellsH = hasSize ? meta.size.h : autoCellsH;
-
-    // Clip the label by display-width when the user-chosen size cannot
-    // hold it; the border stays at outerCellsW.
-    const maxLabelW = Math.max(0, outerCellsW - 2);
-    let displayLabel = label;
-    if (rawLabelW > maxLabelW) {
-      console.warn(
-        `pylon: label ${JSON.stringify(label)} is wider than size.w=` +
-          `${outerCellsW}; truncating.`,
-      );
-      let w = 0;
-      let out = "";
-      for (const ch of label) {
-        const cw = charWidth(ch.codePointAt(0));
-        if (w + cw > maxLabelW) break;
-        out += ch;
-        w += cw;
-      }
-      displayLabel = out;
+  // Truncate a row (if it's wider than targetW) along grapheme-ish
+  // boundaries, counting display width. Cheap; good enough for MVP.
+  const clipRow = (row, targetW) => {
+    if (displayWidth(row) <= targetW) return row;
+    let w = 0;
+    let out = "";
+    for (const ch of row) {
+      const cw = charWidth(ch.codePointAt(0));
+      if (w + cw > targetW) break;
+      out += ch;
+      w += cw;
     }
-    const labelW = displayWidth(displayLabel);
+    return out;
+  };
 
-    // Alignment always distributes the slack -- auto-sized boxes have
-    // 2*NATURAL_PAD of slack to play with, sized boxes have whatever
-    // remains after the label. Min 1 cell pad on the pushed-against edge.
-    const hSlack = Math.max(0, outerCellsW - 2 - labelW);
-    const { leftPad, rightPad } = distributePad(hSlack, align, 1);
+  // Distribute the "extra" vertical rows (beyond the content) above and
+  // below the body so multi-row content sits vertically centered in a
+  // larger sized box.
+  const vertPad = (rows, targetH, contentW) => {
+    const extra = Math.max(0, targetH - rows.length);
+    if (extra === 0) return rows;
+    const top = Math.floor(extra / 2);
+    const bot = extra - top;
+    const blank = " ".repeat(contentW);
+    return [
+      ...new Array(top).fill(blank),
+      ...rows,
+      ...new Array(bot).fill(blank),
+    ];
+  };
 
-    const vSlack = Math.max(0, outerCellsH - 3);
-    const topRows = Math.floor(vSlack / 2);
-    const bottomRows = vSlack - topRows;
+  // Render an item (text or box) to its natural rows.
+  const renderItemRows = (item, bc) => {
+    if (item.type === "text") return [item.content];
+    if (item.type === "box") return renderBoxRows(item, bc);
+    return [];
+  };
 
-    // SVG / PNG dimensions use the same cell model as ASCII so the
-    // three backends agree on outer width and alignment position.
-    const pxW = outerCellsW * CELL_PX_W;
-    const pxH = outerCellsH * CELL_PX_H;
+  // Render a box AST to a flat array of rows. When targetW / targetH are
+  // provided, the box is forced to those outer dimensions; otherwise it
+  // auto-sizes to its content plus natural padding.
+  const renderBoxRows = (ast, bc, targetW, targetH) => {
+    const { items = [], align = "center", bordered } = ast;
 
-    return {
-      outerCellsW,
-      outerCellsH,
-      label: displayLabel,
-      labelW,
-      leftPad,
-      rightPad,
-      topRows,
-      bottomRows,
-      pxW,
-      pxH,
-      align,
-      hasSize,
-    };
+    // Produce the rows of this box's items (already unpadded).
+    const itemRows = items.flatMap((it) => renderItemRows(it, bc));
+    const naturalContentW = itemRows.reduce(
+      (max, r) => Math.max(max, displayWidth(r)),
+      1,
+    );
+    const naturalOuterW = bordered
+      ? naturalContentW + 2 * NATURAL_PAD + 2
+      : naturalContentW;
+    const naturalOuterH = bordered ? itemRows.length + 2 : itemRows.length;
+
+    const outerW = targetW ?? naturalOuterW;
+    const outerH = targetH ?? naturalOuterH;
+
+    const contentW = bordered ? Math.max(0, outerW - 2) : outerW;
+    const contentH = bordered ? Math.max(0, outerH - 2) : outerH;
+
+    // Clip any row too wide for the content area, then pad it to contentW.
+    const clipped = itemRows.map((r) => clipRow(r, contentW));
+    const paddedH = vertPad(clipped, contentH, contentW);
+    const padded = paddedH.map((r) => padRow(r, contentW, align));
+
+    if (!bordered) return padded;
+
+    const hLine = bc.h.repeat(contentW);
+    return [
+      bc.tl + hLine + bc.tr,
+      ...padded.map((r) => bc.v + r + bc.v),
+      bc.bl + hLine + bc.br,
+    ];
+  };
+
+  // Top-level render entry: honors meta.size on the root node only.
+  const renderRows = (ast) => {
+    const bc = boxChars(ast);
+    const size = ast.meta?.size;
+    const targetW = size?.w;
+    const targetH = size?.h;
+    if (size && ast.bordered === false) {
+      // Borderless root with forced size: still pad to size.
+      return renderBoxRows(ast, bc, targetW, targetH);
+    }
+    return renderBoxRows(ast, bc, targetW, targetH);
   };
 
   // ---- themes -----------------------------------------------------------
@@ -273,29 +378,16 @@
     ast.meta?.theme === "ascii" ? ASCII_BOX : UNICODE_BOX;
 
   // ---- renderers --------------------------------------------------------
+  //
+  // Each backend takes the rows from renderRows(ast) and paints them in
+  // its medium. The rows already carry any nested box borders drawn with
+  // ASCII glyphs, so SVG / PNG render them as a grid of monospace text
+  // (plus an outer vector rect when the root is bordered).
   const renderers = {
     ascii(ast) {
-      const { label, bordered } = ast;
+      const rows = renderRows(ast);
       const pre = document.createElement("pre");
       pre.className = "pylon-ascii";
-      if (!bordered) {
-        pre.textContent = label;
-        return pre;
-      }
-      const L = layout(ast);
-      const bc = boxChars(ast);
-      const barLen = Math.max(0, L.outerCellsW - 2);
-      const line = bc.h.repeat(barLen);
-      const blank = bc.v + " ".repeat(barLen) + bc.v;
-      const content =
-        bc.v + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + bc.v;
-
-      const rows = [bc.tl + line + bc.tr];
-      for (let i = 0; i < L.topRows; i++) rows.push(blank);
-      rows.push(content);
-      for (let i = 0; i < L.bottomRows; i++) rows.push(blank);
-      rows.push(bc.bl + line + bc.br);
-
       // Per-cell DOM so CJK / emoji stay aligned regardless of font.
       for (let i = 0; i < rows.length; i++) {
         if (i > 0) pre.append(document.createTextNode("\n"));
@@ -316,17 +408,19 @@
     },
 
     svg(ast) {
-      const { bordered } = ast;
-      const L = layout(ast);
-      const w = L.pxW;
-      const h = L.pxH;
+      const rows = renderRows(ast);
+      const rowW = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+      const w = rowW * CELL_PX_W;
+      const h = rows.length * CELL_PX_H;
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg");
       svg.setAttribute("width", w);
       svg.setAttribute("height", h);
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.classList.add("pylon-svg");
-      if (bordered) {
+      // Root border as a real vector rect when the outermost box is
+      // bordered -- nested inner boxes are drawn as text glyphs inside.
+      if (ast.bordered) {
         const rect = document.createElementNS(ns, "rect");
         rect.setAttribute("x", 1);
         rect.setAttribute("y", 1);
@@ -338,33 +432,35 @@
         rect.setAttribute("stroke-width", "1");
         svg.append(rect);
       }
-      const t = document.createElementNS(ns, "text");
-      if (L.align === "left") {
-        t.setAttribute("x", L.leftPad * CELL_PX_W);
+      // Draw text rows. When the root is bordered we skip rendering the
+      // outer border glyphs (rows[0] and rows[-1]) so the vector rect
+      // isn't duplicated by text. Inner rows still carry any nested-box
+      // glyphs, which render as text.
+      const firstRow = ast.bordered ? 1 : 0;
+      const lastRow = ast.bordered ? rows.length - 1 : rows.length;
+      for (let i = firstRow; i < lastRow; i++) {
+        const body = ast.bordered ? rows[i].slice(1, -1) : rows[i];
+        const t = document.createElementNS(ns, "text");
+        t.setAttribute("x", ast.bordered ? CELL_PX_W : 0);
+        t.setAttribute("y", (i + 0.5) * CELL_PX_H);
         t.setAttribute("text-anchor", "start");
-      } else if (L.align === "right") {
-        t.setAttribute("x", w - L.rightPad * CELL_PX_W);
-        t.setAttribute("text-anchor", "end");
-      } else {
-        t.setAttribute("x", w / 2);
-        t.setAttribute("text-anchor", "middle");
+        t.setAttribute("dominant-baseline", "middle");
+        t.setAttribute("font-family", "monospace");
+        t.setAttribute("font-size", CELL_PX_H * 0.7);
+        t.setAttribute("xml:space", "preserve");
+        t.setAttribute("fill", "currentColor");
+        t.textContent = body;
+        svg.append(t);
       }
-      t.setAttribute("y", h / 2);
-      t.setAttribute("dominant-baseline", "middle");
-      t.setAttribute("font-family", "monospace");
-      t.setAttribute("font-size", "14");
-      t.setAttribute("fill", "currentColor");
-      t.textContent = L.label;
-      svg.append(t);
       return svg;
     },
 
     png(ast, opts = {}) {
-      const { bordered } = ast;
       const color = opts.color || "#000";
-      const L = layout(ast);
-      const w = L.pxW;
-      const h = L.pxH;
+      const rows = renderRows(ast);
+      const rowW = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+      const w = rowW * CELL_PX_W;
+      const h = rows.length * CELL_PX_H;
       const dpr = window.devicePixelRatio || 1;
       const canvas = document.createElement("canvas");
       canvas.width = w * dpr;
@@ -373,7 +469,7 @@
       canvas.style.height = h + "px";
       const ctx = canvas.getContext("2d");
       ctx.scale(dpr, dpr);
-      if (bordered) {
+      if (ast.bordered) {
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = color;
         if (ctx.roundRect) {
@@ -385,20 +481,19 @@
         }
       }
       ctx.fillStyle = color;
-      ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
+      ctx.font = `${
+        CELL_PX_H * 0.7
+      }px ui-monospace, Menlo, Consolas, monospace`;
       ctx.textBaseline = "middle";
-      let textX;
-      if (L.align === "left") {
-        ctx.textAlign = "left";
-        textX = L.leftPad * CELL_PX_W;
-      } else if (L.align === "right") {
-        ctx.textAlign = "right";
-        textX = w - L.rightPad * CELL_PX_W;
-      } else {
-        ctx.textAlign = "center";
-        textX = w / 2;
+      ctx.textAlign = "left";
+      const firstRow = ast.bordered ? 1 : 0;
+      const lastRow = ast.bordered ? rows.length - 1 : rows.length;
+      for (let i = firstRow; i < lastRow; i++) {
+        const body = ast.bordered ? rows[i].slice(1, -1) : rows[i];
+        const x = ast.bordered ? CELL_PX_W : 0;
+        const y = (i + 0.5) * CELL_PX_H;
+        ctx.fillText(body, x, y);
       }
-      ctx.fillText(L.label, textX, h / 2);
       const img = document.createElement("img");
       img.src = canvas.toDataURL("image/png");
       img.width = w;
@@ -414,23 +509,11 @@
   // {blob, mime, ext}. PNG is async because canvas.toBlob is callback-based.
   const exporters = {
     ascii(ast) {
-      const { label, bordered } = ast;
-      if (!bordered) {
-        return { text: label, mime: "text/plain", ext: "txt" };
-      }
-      const L = layout(ast);
-      const bc = boxChars(ast);
-      const barLen = Math.max(0, L.outerCellsW - 2);
-      const line = bc.h.repeat(barLen);
-      const blank = bc.v + " ".repeat(barLen) + bc.v;
-      const content =
-        bc.v + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + bc.v;
-      const rows = [bc.tl + line + bc.tr];
-      for (let i = 0; i < L.topRows; i++) rows.push(blank);
-      rows.push(content);
-      for (let i = 0; i < L.bottomRows; i++) rows.push(blank);
-      rows.push(bc.bl + line + bc.br);
-      return { text: rows.join("\n"), mime: "text/plain", ext: "txt" };
+      return {
+        text: renderRows(ast).join("\n"),
+        mime: "text/plain",
+        ext: "txt",
+      };
     },
 
     svg(ast) {
@@ -442,18 +525,18 @@
     },
 
     async png(ast, opts = {}) {
-      const { bordered } = ast;
       const color = opts.color || "#000";
-      const L = layout(ast);
-      const w = L.pxW;
-      const h = L.pxH;
+      const rows = renderRows(ast);
+      const rowW = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+      const w = rowW * CELL_PX_W;
+      const h = rows.length * CELL_PX_H;
       const dpr = window.devicePixelRatio || 1;
       const canvas = document.createElement("canvas");
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       const ctx = canvas.getContext("2d");
       ctx.scale(dpr, dpr);
-      if (bordered) {
+      if (ast.bordered) {
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = color;
         if (ctx.roundRect) {
@@ -465,20 +548,19 @@
         }
       }
       ctx.fillStyle = color;
-      ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
+      ctx.font = `${
+        CELL_PX_H * 0.7
+      }px ui-monospace, Menlo, Consolas, monospace`;
       ctx.textBaseline = "middle";
-      let textX;
-      if (L.align === "left") {
-        ctx.textAlign = "left";
-        textX = L.leftPad * CELL_PX_W;
-      } else if (L.align === "right") {
-        ctx.textAlign = "right";
-        textX = w - L.rightPad * CELL_PX_W;
-      } else {
-        ctx.textAlign = "center";
-        textX = w / 2;
+      ctx.textAlign = "left";
+      const firstRow = ast.bordered ? 1 : 0;
+      const lastRow = ast.bordered ? rows.length - 1 : rows.length;
+      for (let i = firstRow; i < lastRow; i++) {
+        const body = ast.bordered ? rows[i].slice(1, -1) : rows[i];
+        const x = ast.bordered ? CELL_PX_W : 0;
+        const y = (i + 0.5) * CELL_PX_H;
+        ctx.fillText(body, x, y);
       }
-      ctx.fillText(L.label, textX, h / 2);
       const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
       return { blob, mime: "image/png", ext: "png" };
     },
