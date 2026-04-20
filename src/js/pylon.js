@@ -340,22 +340,25 @@
     for (const c of items) {
       if (c?.type === "box" && c.name) boxByName.set(c.name, c);
     }
+    // What the current ref's arrow flows *out of*. Typically the box
+    // two slots back (`[src] <edge> &ref`), but in a chain like
+    // `&x -> &y` the previous ref's target stands in for `[src]`.
+    const boxLike = (it) => {
+      if (it?.type === "box") return it;
+      if (it?.type === "ref" && it.target) return it.target;
+      return null;
+    };
     for (let i = 0; i < items.length; i++) {
       const ref = items[i];
       if (!(ref?.type === "ref")) continue;
       const target = boxByName.get(ref.name);
       if (!target) continue;
-      // Source box = the box the ref's edge flows out of. Expect the
-      // pattern `[src] <edge> &ref` so the box sits two slots back.
       let sourceBox = null;
-      if (
-        i >= 2 &&
-        items[i - 1]?.type === "edge" &&
-        items[i - 2]?.type === "box"
-      ) {
-        sourceBox = items[i - 2];
-      } else if (i >= 1 && items[i - 1]?.type === "box") {
-        sourceBox = items[i - 1];
+      if (i >= 2 && items[i - 1]?.type === "edge") {
+        sourceBox = boxLike(items[i - 2]);
+      }
+      if (!sourceBox && i >= 1) {
+        sourceBox = boxLike(items[i - 1]);
       }
       ref.sameRowArc = true;
       ref.target = target;
