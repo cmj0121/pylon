@@ -168,10 +168,13 @@ The `| <ident>` chain only extracts when it runs to end-of-label.
 
 ### Available renderers (v0.2.0)
 
-| Renderer | Input              | Output                                                         |
-| -------- | ------------------ | -------------------------------------------------------------- |
-| `text`   | string or `@ref`   | Pass-through; `@ref` is emitted via `JSON.stringify`.          |
-| `bar`    | `@ref` → `[{x,y}]` | Horizontal bars scaled against `max(y)` with `(value)` labels. |
+| Renderer       | Input              | Output                                                                   |
+| -------------- | ------------------ | ------------------------------------------------------------------------ |
+| `text`         | string or `@ref`   | Pass-through; `@ref` is emitted via `JSON.stringify`.                    |
+| `hbar` (`bar`) | `@ref` → `[{x,y}]` | Horizontal bars scaled against `max(y)` with `(value)` labels.           |
+| `vbar`         | `@ref` → `[{x,y}]` | Vertical bars scaled against `max(y)`; `x` and `(value)` labels as feet. |
+
+`bar` is kept as a v0.1 alias for `hbar`; both render identically.
 
 `text` example:
 
@@ -219,6 +222,43 @@ data:
 and then truncates the `(value)` label. `bar` only accepts an `@ref`; a raw string
 surfaces `⚠ bar: use @ref`.
 
+`vbar` example:
+
+```pylon
+---
+data:
+  - x: 1
+    y: 10
+  - x: 2
+    y: 20
+  - x: 3
+    y: 15
+---
+[ @data | vbar ]
+```
+
+```txt
+┌──────────────────┐
+│        █         │
+│        █         │
+│        █   █     │
+│        █   █     │
+│        █   █     │
+│    █   █   █     │
+│    █   █   █     │
+│    █   █   █     │
+│    █   █   █     │
+│    █   █   █     │
+│    1   2   3     │
+│   (10)(20)(15)   │
+└──────────────────┘
+```
+
+`vbar` mirrors `hbar`'s 10-cell budget but applies it to the chart HEIGHT. Each
+series entry becomes a single-column bar, column width is `max(|label|, |(value)|, 3)`,
+and the two footer rows carry the `x` label and `(value)` text. All-zero `y` renders
+zero-height bars (no error).
+
 ### Composition
 
 `| renderer` composes with `::` naming, alignment dashes, and borderless `(...)`:
@@ -233,15 +273,19 @@ Parse-shape errors (malformed `data:`, tab indent) go to the `<pylon-chart>` toa
 same mechanism as duplicate-name errors. Render-time errors appear inline inside the
 offending box, prefixed with `⚠`, so users can pinpoint them:
 
-| Trigger                            | Inline message          |
-| ---------------------------------- | ----------------------- |
-| Raw string piped to non-`text`     | `bar: use @ref`         |
-| Unknown renderer name              | `unknown renderer: foo` |
-| `@ref` not declared in frontmatter | `@missing not found`    |
-| Renderer got wrong shape           | `bar: expected [{x,y}]` |
-| Empty series for `bar`             | `bar: empty series`     |
-| Any negative `y`                   | `bar: negative y`       |
-| Duplicate `x` in series            | `bar: duplicate x "a"`  |
+| Trigger                            | Inline message           |
+| ---------------------------------- | ------------------------ |
+| Raw string piped to non-`text`     | `bar: use @ref`          |
+| Unknown renderer name              | `unknown renderer: foo`  |
+| `@ref` not declared in frontmatter | `@missing not found`     |
+| Renderer got wrong shape           | `hbar: expected [{x,y}]` |
+| Empty series for a bar renderer    | `hbar: empty series`     |
+| Any negative `y`                   | `hbar: negative y`       |
+| Duplicate `x` in series            | `hbar: duplicate x "a"`  |
+
+Bar-family errors (shape / empty / negative-y / duplicate-x) carry the actually-invoked
+renderer name: `hbar:` or `vbar:`. `bar` is an alias so its shape errors surface as
+`hbar:`; the raw-string `use @ref` case keeps the literally-written name.
 
 A bare `@ref` with no renderer surfaces its own inline error (`@<name>: requires a
 renderer`) so the omission is loud rather than silent.
@@ -353,11 +397,14 @@ Data references and renderers:
   end-of-label. Chains (`| a | b | c`) extract only when every segment is a valid identifier up to the closing
   bracket; first renderer wins, the rest are consumed silently. Malformed chains fall back to literal label
   text.
-- v0.2.0 ships two renderers:
+- v0.2.0 ships three renderers:
 
   - `text` (default): string pass-through; `@ref` is emitted via `JSON.stringify`.
-  - `bar`: horizontal bar chart over `[{x, y}, ...]`. Scales `y` against `max(y)` into a 10-cell bar budget,
-    right-labels each row with `(value)`. Requires `@ref` input — a raw string surfaces `⚠ bar: use @ref`.
+  - `hbar` (alias `bar`): horizontal bar chart over `[{x, y}, ...]`. Scales `y` against `max(y)` into a
+    10-cell bar budget, right-labels each row with `(value)`. Requires `@ref` input — a raw string surfaces
+    `⚠ hbar: use @ref`.
+  - `vbar`: vertical bar chart over the same `[{x, y}, ...]` shape. Each entry becomes a single-column bar;
+    the 10-cell budget is the chart HEIGHT, and two footer rows carry the `x` label and `(value)` text.
 
   ```pylon
   ---
