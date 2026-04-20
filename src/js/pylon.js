@@ -556,9 +556,23 @@
       this._editor = editor;
       this.append(editor);
 
-      // Right pane: toolbar + rendered output.
+      // Right pane: guide + toolbar + rendered output.
       const right = document.createElement("div");
       right.className = "pylon-right";
+
+      // Compact reference so users don't have to leave the pane to
+      // recall the frontmatter keys and alignment syntax.
+      const guide = document.createElement("div");
+      guide.className = "pylon-guide";
+      guide.innerHTML =
+        '<div><span class="pylon-guide-key">size:</span> <code>WxH</code>' +
+        '<span class="pylon-guide-sep">·</span>' +
+        '<span class="pylon-guide-key">theme:</span> <code>simple | ascii | dark | light</code></div>' +
+        '<div><span class="pylon-guide-key">align:</span> <code>[- x -]</code> center' +
+        '<span class="pylon-guide-sep">·</span>' +
+        "<code>[- x&nbsp;&nbsp;]</code> right" +
+        '<span class="pylon-guide-sep">·</span>' +
+        "<code>[&nbsp;&nbsp;x -]</code> left</div>";
 
       const toolbar = document.createElement("div");
       toolbar.className = "pylon-toolbar";
@@ -591,7 +605,7 @@
       this._viewHost = document.createElement("div");
       this._viewHost.className = "pylon-view";
 
-      right.append(toolbar, this._viewHost);
+      right.append(guide, toolbar, this._viewHost);
       this.append(right);
     }
 

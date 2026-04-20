@@ -139,6 +139,35 @@ pylon-chart[wysiwyg] {
   min-width: 0;
 }
 
+.pylon-guide {
+  padding: 0.45rem 0.65rem;
+  background: var(--pylon-paper);
+  border: var(--pylon-border);
+  border-radius: var(--pylon-radius);
+  color: var(--pylon-ink-soft);
+  font-family: var(--pylon-font-mono);
+  font-size: 0.68rem;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+}
+
+.pylon-guide code {
+  font: inherit;
+  color: var(--pylon-ink);
+  background: transparent;
+  padding: 0;
+}
+
+.pylon-guide .pylon-guide-key {
+  color: var(--pylon-accent);
+  margin-right: 0.4ch;
+}
+
+.pylon-guide .pylon-guide-sep {
+  margin: 0 0.7ch;
+  opacity: 0.5;
+}
+
 .pylon-toolbar {
   display: flex;
   justify-content: flex-end;
