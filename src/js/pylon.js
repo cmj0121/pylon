@@ -160,16 +160,35 @@
       if (!body) body = DEFAULT_EXAMPLE;
     }
 
+    // Top-level is conceptually always an implicit '( ... )' -- a
+    // borderless container -- so multiple sibling nodes stack:
+    //
+    //   [Hello]
+    //   (World)
+    //
+    // parses as two top-level items. When the user writes exactly one
+    // bracketed node we use it directly so SVG / PNG can paint a real
+    // vector rect; when they write more than one we wrap in the
+    // implicit borderless root.
+    const items = parseItems(body);
     let root;
-    if (body.startsWith("[") || body.startsWith("(")) {
-      root = parseBracketedNode(body);
-    } else {
-      // Implicit bordered root around bare text.
+    if (items.length === 1 && items[0].type === "box") {
+      root = items[0];
+    } else if (items.length === 1) {
+      // Single bare text run: keep the legacy implicit-bordered wrap
+      // so bare labels still render with a box.
       root = {
         type: "box",
         bordered: true,
         align: "center",
-        items: [{ type: "text", content: body }],
+        items,
+      };
+    } else {
+      root = {
+        type: "box",
+        bordered: false,
+        align: "center",
+        items,
       };
     }
     root.meta = meta;
