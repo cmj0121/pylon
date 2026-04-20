@@ -71,8 +71,10 @@
   };
 
   // Extract leading / trailing '-' alignment springs from an inner string.
-  const ALIGN_LEFT_RE = /^\s*-\s+/;
-  const ALIGN_RIGHT_RE = /\s+-\s*$/;
+  // The dash must be flush with the bracket -- '[-' and '-]' count,
+  // '[ -' and '- ]' do not (those are literal dashes inside the label).
+  const ALIGN_LEFT_RE = /^-\s+/;
+  const ALIGN_RIGHT_RE = /\s+-$/;
   const extractAlign = (inner) => {
     const hasLeft = ALIGN_LEFT_RE.test(inner);
     const hasRight = ALIGN_RIGHT_RE.test(inner);
@@ -329,27 +331,35 @@
   // Render a box AST to a flat array of rows. When targetW / targetH are
   // provided, the box is forced to those outer dimensions; otherwise it
   // auto-sizes to its content plus natural padding.
+  //
+  // A node gets natural side-padding when it's either:
+  //   - bordered (always -- the padding sits between content and border)
+  //   - a borderless container holding two or more items (so align
+  //     springs on the wrapper have visible space to push the stack).
+  // Single-item borderless wrappers stay transparent: (World) prints
+  // "World" and ([x]) prints the contents of [x] verbatim.
   const renderBoxRows = (ast, bc, targetW, targetH) => {
     const { items = [], align = "center", bordered } = ast;
 
-    // Produce the rows of this box's items (already unpadded).
     const itemRows = items.flatMap((it) => renderItemRows(it, bc));
     const naturalContentW = itemRows.reduce(
       (max, r) => Math.max(max, displayWidth(r)),
       1,
     );
-    const naturalOuterW = bordered
-      ? naturalContentW + 2 * NATURAL_PAD + 2
-      : naturalContentW;
-    const naturalOuterH = bordered ? itemRows.length + 2 : itemRows.length;
+
+    const hasPad = bordered || items.length > 1;
+    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    const borderBudget = bordered ? 2 : 0;
+
+    const naturalOuterW = naturalContentW + padBudget + borderBudget;
+    const naturalOuterH = itemRows.length + borderBudget;
 
     const outerW = targetW ?? naturalOuterW;
     const outerH = targetH ?? naturalOuterH;
 
-    const contentW = bordered ? Math.max(0, outerW - 2) : outerW;
-    const contentH = bordered ? Math.max(0, outerH - 2) : outerH;
+    const contentW = Math.max(0, outerW - borderBudget);
+    const contentH = Math.max(0, outerH - borderBudget);
 
-    // Clip any row too wide for the content area, then pad it to contentW.
     const clipped = itemRows.map((r) => clipRow(r, contentW));
     const paddedH = vertPad(clipped, contentH, contentW);
     const padded = paddedH.map((r) => padRow(r, contentW, align));
