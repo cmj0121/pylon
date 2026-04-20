@@ -427,10 +427,12 @@
 
   // Render an item to its natural rows. Rows (horizontal chains) and
   // edges are lowered inside renderRowRows; they do not appear standalone.
-  const renderItemRows = (item, bc) => {
+  // When `maxW` is passed, a row wider than `maxW` wraps at item
+  // boundaries into multiple stacked sub-rows.
+  const renderItemRows = (item, bc, maxW) => {
     if (item.type === "text") return [item.content];
     if (item.type === "box") return renderBoxRows(item, bc);
-    if (item.type === "row") return renderRowRows(item, bc);
+    if (item.type === "row") return renderRowRows(item, bc, maxW);
     return [];
   };
 
@@ -459,48 +461,90 @@
 
   // Render a row (horizontal chain of node / edge items) to display
   // rows. Node items render to their own rows; shorter nodes get
-  // blank-row padding so every column is the same height; edges are
-  // placed on the midline row and blank strings on the others.
-  const renderRowRows = (row, bc) => {
-    const blocks = row.items.map((it) =>
-      it.type === "edge"
-        ? { edge: it, text: edgeString(it, bc) }
-        : { rows: renderItemRows(it, bc) },
-    );
-    const maxH = blocks.reduce(
-      (m, b) => (b.rows ? Math.max(m, b.rows.length) : m),
-      1,
-    );
-    const midline = Math.floor((maxH - 1) / 2);
-
-    const columns = blocks.map((b) => {
-      if (b.edge) {
-        const blank = " ".repeat(displayWidth(b.text));
-        return Array.from({ length: maxH }, (_, r) =>
-          r === midline ? b.text : blank,
-        );
+  // blank-row padding so every column shares the row's tallest
+  // height; edges are placed on the midline row and blank strings on
+  // the others.
+  //
+  // When `maxW` is given (only happens when the containing box has
+  // an explicit meta.size.w), items that don't fit into the current
+  // chunk start a new chunk. Chunks stack vertically, so a long
+  // '[A]->[B]->[C]->[D]' wraps to
+  //
+  //   [A]->[B]->
+  //   [C]->[D]
+  //
+  // at item boundaries. Trailing edges at a wrap are dropped (they
+  // would point to nothing) and the new chunk never starts with an
+  // edge; the continuation is implied by stacking.
+  const renderRowRows = (row, bc, maxW) => {
+    const parts = row.items.map((it) => {
+      if (it.type === "edge") {
+        const text = edgeString(it, bc);
+        return { kind: "edge", text, width: displayWidth(text) };
       }
-      const rows = b.rows;
+      const rows = renderItemRows(it, bc);
       const width = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
-      const blank = " ".repeat(width);
-      const padded = rows.map((r) => padRow(r, width, "left"));
-      const extra = maxH - padded.length;
-      const top = Math.floor(extra / 2);
-      const bot = extra - top;
-      return [
-        ...new Array(top).fill(blank),
-        ...padded,
-        ...new Array(bot).fill(blank),
-      ];
+      return { kind: "block", rows, width };
     });
 
-    const result = [];
-    for (let r = 0; r < maxH; r++) {
-      let line = "";
-      for (const col of columns) line += col[r];
-      result.push(line);
+    // Group parts into chunks that each fit within maxW.
+    const chunks = [[]];
+    let curW = 0;
+    let justWrapped = false;
+    for (const p of parts) {
+      const current = chunks[chunks.length - 1];
+      if (maxW !== undefined && current.length > 0 && curW + p.width > maxW) {
+        // Drop any trailing edges from the chunk we're about to close.
+        while (
+          current.length > 0 &&
+          current[current.length - 1].kind === "edge"
+        ) {
+          curW -= current.pop().width;
+        }
+        chunks.push([]);
+        curW = 0;
+        justWrapped = true;
+      }
+      if (justWrapped && p.kind === "edge") continue; // skip leading edge
+      chunks[chunks.length - 1].push(p);
+      curW += p.width;
+      justWrapped = false;
     }
-    return result;
+
+    const renderChunk = (chunk) => {
+      const h = chunk.reduce(
+        (m, p) => (p.kind === "block" ? Math.max(m, p.rows.length) : m),
+        1,
+      );
+      const midline = Math.floor((h - 1) / 2);
+      const columns = chunk.map((p) => {
+        if (p.kind === "edge") {
+          const blank = " ".repeat(p.width);
+          return Array.from({ length: h }, (_, r) =>
+            r === midline ? p.text : blank,
+          );
+        }
+        const blank = " ".repeat(p.width);
+        const padded = p.rows.map((r) => padRow(r, p.width, "left"));
+        const extra = h - padded.length;
+        const top = Math.floor(extra / 2);
+        const bot = extra - top;
+        return [
+          ...new Array(top).fill(blank),
+          ...padded,
+          ...new Array(bot).fill(blank),
+        ];
+      });
+      const out = [];
+      for (let r = 0; r < h; r++) {
+        let line = "";
+        for (const col of columns) line += col[r];
+        out.push(line);
+      }
+      return out;
+    };
+
+    return chunks.filter((c) => c.length > 0).flatMap(renderChunk);
   };
 
   // Render a box AST to a flat array of rows. When targetW / targetH are
@@ -516,15 +560,26 @@
   const renderBoxRows = (ast, bc, { targetW, targetH } = {}) => {
     const { items = [], align = "center", bordered } = ast;
 
-    const itemRows = items.flatMap((it) => renderItemRows(it, bc));
+    const hasPad = bordered || items.length > 1;
+    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    const borderBudget = bordered ? 2 : 0;
+
+    // When targetW is set we pass maxW down to any row items so a long
+    // flow chain wraps at item boundaries to fit the sized frame. The
+    // maxW is the inside of the final frame, minus the natural side
+    // padding so the wrapped chunks don't touch the border wall.
+    const sizedContentW =
+      targetW !== undefined
+        ? Math.max(1, targetW - borderBudget - (hasPad ? 2 * NATURAL_PAD : 0))
+        : undefined;
+
+    const itemRows = items.flatMap((it) =>
+      renderItemRows(it, bc, sizedContentW),
+    );
     const naturalContentW = itemRows.reduce(
       (max, r) => Math.max(max, displayWidth(r)),
       1,
     );
-
-    const hasPad = bordered || items.length > 1;
-    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
-    const borderBudget = bordered ? 2 : 0;
 
     const naturalOuterW = naturalContentW + padBudget + borderBudget;
     const naturalOuterH = itemRows.length + borderBudget;
