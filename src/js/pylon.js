@@ -3,9 +3,9 @@
 // Registers a <pylon-chart> custom element. Renders its source
 // (textContent or the `src` attribute) in one of three backends:
 //
-//   <pylon-chart>Hello, World!</pylon-chart>                  // ASCII (default)
-//   <pylon-chart format="svg">Hello, World!</pylon-chart>     // inline SVG
-//   <pylon-chart format="png">Hello, World!</pylon-chart>     // canvas -> <img>
+//   <pylon-chart>[- Hello -]</pylon-chart>                  // ASCII (default)
+//   <pylon-chart format="svg">[- Hello -]</pylon-chart>     // inline SVG
+//   <pylon-chart format="png">[- Hello -]</pylon-chart>     // canvas -> <img>
 //
 // (The HTML spec requires custom element names to contain a hyphen,
 // hence `pylon-chart` rather than `pylon`.)
@@ -21,25 +21,54 @@
 
 (() => {
   // ---- stub parser ------------------------------------------------------
+  // Replace with the real Pylon parser later. For now, any input becomes
+  // a single-box AST:
+  //   [ ... ]   bordered node
+  //   ( ... )   borderless node
+  //   otherwise plain text in a bordered node
+  // Leading and trailing '-' inside the brackets are alignment markers and
+  // are stripped. Empty input falls back to the default example.
+  const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
+
   const parse = (source) => {
-    const label = (source ?? "").trim() || "Hello, World!";
-    return { type: "box", label };
+    const raw = (source ?? "").trim() || DEFAULT_EXAMPLE;
+
+    let bordered = true;
+    let inner = raw;
+    if (raw.startsWith("[") && raw.endsWith("]")) {
+      bordered = true;
+      inner = raw.slice(1, -1);
+    } else if (raw.startsWith("(") && raw.endsWith(")")) {
+      bordered = false;
+      inner = raw.slice(1, -1);
+    }
+
+    const label = inner
+      .replace(/^\s*-\s+/, "")
+      .replace(/\s+-\s*$/, "")
+      .trim();
+
+    return { type: "box", label, bordered };
   };
 
   // ---- renderers --------------------------------------------------------
   const renderers = {
     ascii(ast) {
-      const label = ast.label;
-      const border = "+" + "-".repeat(label.length + 2) + "+";
-      const body = "| " + label + " |";
+      const { label, bordered } = ast;
       const pre = document.createElement("pre");
       pre.className = "pylon-ascii";
-      pre.textContent = [border, body, border].join("\n");
+      if (bordered) {
+        const border = "+" + "-".repeat(label.length + 2) + "+";
+        const body = "| " + label + " |";
+        pre.textContent = [border, body, border].join("\n");
+      } else {
+        pre.textContent = label;
+      }
       return pre;
     },
 
     svg(ast) {
-      const label = ast.label;
+      const { label, bordered } = ast;
       const w = label.length * 10 + 24;
       const h = 44;
       const ns = "http://www.w3.org/2000/svg";
@@ -48,15 +77,17 @@
       svg.setAttribute("height", h);
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.classList.add("pylon-svg");
-      const rect = document.createElementNS(ns, "rect");
-      rect.setAttribute("x", 1);
-      rect.setAttribute("y", 1);
-      rect.setAttribute("width", w - 2);
-      rect.setAttribute("height", h - 2);
-      rect.setAttribute("fill", "none");
-      rect.setAttribute("stroke", "currentColor");
-      rect.setAttribute("stroke-width", "1");
-      svg.append(rect);
+      if (bordered) {
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", 1);
+        rect.setAttribute("y", 1);
+        rect.setAttribute("width", w - 2);
+        rect.setAttribute("height", h - 2);
+        rect.setAttribute("fill", "none");
+        rect.setAttribute("stroke", "currentColor");
+        rect.setAttribute("stroke-width", "1");
+        svg.append(rect);
+      }
       const t = document.createElementNS(ns, "text");
       t.setAttribute("x", w / 2);
       t.setAttribute("y", h / 2);
@@ -71,7 +102,7 @@
     },
 
     png(ast, opts = {}) {
-      const label = ast.label;
+      const { label, bordered } = ast;
       const color = opts.color || "#000";
       const w = label.length * 10 + 24;
       const h = 44;
@@ -83,9 +114,11 @@
       canvas.style.height = h + "px";
       const ctx = canvas.getContext("2d");
       ctx.scale(dpr, dpr);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = color;
-      ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+      if (bordered) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color;
+        ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+      }
       ctx.fillStyle = color;
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
       ctx.textAlign = "center";
@@ -128,7 +161,6 @@
         this._source = this.getAttribute("src") ?? "";
       }
       if (name === "format") {
-        // Author-driven format change clears any dropdown override.
         this._format = null;
       }
       this._mount();
@@ -159,9 +191,11 @@
     }
 
     _mountWysiwyg() {
-      // Left pane: plaintext editor.
+      // Left pane: plaintext editor. Placeholder matches the stub
+      // parser's empty-source fallback so the two panes agree at rest.
       const editor = document.createElement("textarea");
       editor.className = "pylon-editor";
+      editor.placeholder = DEFAULT_EXAMPLE;
       editor.value = this._source;
       editor.rows = Math.max(6, this._source.split("\n").length + 1);
       editor.addEventListener("input", () => {
