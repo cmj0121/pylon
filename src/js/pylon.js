@@ -729,81 +729,184 @@
       out.push(line);
     }
 
-    // Append U-arc rows under each same-row ref. Self-loop (target ===
-    // source) keeps both arms inside the target box; multi-box arcs
-    // (target !== source) anchor one arm under each box's inner-right
-    // column so the arc spans between them. The arrow head marks the
-    // target side regardless of which box is left.
-    //
-    // When multiple arcs stack, later arcs get pushed further from the
-    // row's linear block. A post-pass extends each arm upward through
-    // any still-empty cells so the arc visually connects back to the
-    // declaration instead of floating two rows below with no trail;
-    // when the extended column is the arrow arm, the `▲` is moved to
-    // the topmost reached row so it sits just beneath the box.
+    // Same-row refs render as U-arcs. Self-loops stay below when
+    // they're alone, and hop above when mixed with a cross-box arc --
+    // otherwise their source arm threads through the cross-box rows as
+    // a long dangling line. Two cross-box arcs between the same pair
+    // fold into a shared arrow row with nested U's (inner on near cols,
+    // outer on far cols); everything else takes one arrow + one corner
+    // row per arc. A post-pass extends below-arc arms upward into
+    // blank cells so they trail back to the declaration; the arrow
+    // head rides up with the arm when extended.
     const arcs = row.items.filter(
       (it) => it && it.type === "ref" && it.sameRowArc,
     );
     if (arcs.length > 0 && totalWidth > 0) {
-      const colOf = (part) =>
-        parts.slice(0, parts.indexOf(part)).reduce((s, p) => s + p.width, 0);
-      const arcSpecs = [];
+      const partStart = new Map();
+      {
+        let c = 0;
+        for (const p of parts) {
+          partStart.set(p, c);
+          c += p.width;
+        }
+      }
+      const blockPart = (item) =>
+        parts.find((p) => p.kind === "block" && p.item === item);
+
+      const belowResolved = [];
+      const selfResolved = [];
+      let hasCrossBox = false;
       for (const ref of arcs) {
-        const tgtPart = parts.find(
-          (p) => p.kind === "block" && p.item === ref.target,
-        );
+        const tgtPart = blockPart(ref.target);
         if (!tgtPart) continue;
-        const tgtStart = colOf(tgtPart);
+        const tgtStart = partStart.get(tgtPart);
         const tgtW = tgtPart.width;
-        let armL, armR, tgtArm;
         if (ref.sourceBox === ref.target) {
-          armL = tgtStart + 2;
-          armR = tgtStart + tgtW - 3;
+          selfResolved.push({ tgtStart, tgtW });
+          continue;
+        }
+        const srcPart = blockPart(ref.sourceBox);
+        if (!srcPart) continue;
+        const srcStart = partStart.get(srcPart);
+        const srcW = srcPart.width;
+        hasCrossBox = true;
+        belowResolved.push({
+          tgtStart,
+          tgtW,
+          srcStart,
+          srcW,
+          lo: Math.min(tgtStart, srcStart),
+          hi: Math.max(tgtStart, srcStart),
+        });
+      }
+      const aboveResolved = hasCrossBox ? selfResolved : [];
+      if (!hasCrossBox) belowResolved.push(...selfResolved);
+
+      const compact =
+        belowResolved.length === 2 &&
+        belowResolved.every((r) => r.srcStart !== undefined) &&
+        belowResolved[0].lo === belowResolved[1].lo &&
+        belowResolved[0].hi === belowResolved[1].hi;
+
+      const belowSpecs = [];
+      for (let i = 0; i < belowResolved.length; i++) {
+        const r = belowResolved[i];
+        let armL, armR, tgtArm;
+        if (r.srcStart === undefined) {
+          armL = r.tgtStart + 2;
+          armR = r.tgtStart + r.tgtW - 3;
           tgtArm = armR;
+        } else if (compact) {
+          const isTgtLeft = r.tgtStart < r.srcStart;
+          const leftStart = isTgtLeft ? r.tgtStart : r.srcStart;
+          const leftW = isTgtLeft ? r.tgtW : r.srcW;
+          const rightStart = isTgtLeft ? r.srcStart : r.tgtStart;
+          const rightW = isTgtLeft ? r.srcW : r.tgtW;
+          if (i === 0) {
+            armL = leftStart + leftW - 3;
+            armR = rightStart + 2;
+          } else {
+            armL = leftStart + 2;
+            armR = rightStart + rightW - 3;
+          }
+          tgtArm = isTgtLeft ? armL : armR;
         } else {
-          const srcPart = parts.find(
-            (p) => p.kind === "block" && p.item === ref.sourceBox,
-          );
-          if (!srcPart) continue;
-          const srcStart = colOf(srcPart);
-          const tgtCol = tgtStart + tgtW - 3;
-          const srcCol = srcStart + srcPart.width - 3;
+          const tgtCol = r.tgtStart + r.tgtW - 3;
+          const srcCol = r.srcStart + r.srcW - 3;
           armL = Math.min(tgtCol, srcCol);
           armR = Math.max(tgtCol, srcCol);
           tgtArm = tgtCol;
         }
-        if (armR <= armL) continue;
-        const row1 = new Array(totalWidth).fill(" ");
-        const row2 = new Array(totalWidth).fill(" ");
-        row1[armL] = tgtArm === armL ? "▲" : bc.v;
-        row1[armR] = tgtArm === armR ? "▲" : bc.v;
-        row2[armL] = bc.bl;
-        for (let c = armL + 1; c < armR; c++) row2[c] = bc.h;
-        row2[armR] = bc.br;
-        arcSpecs.push({ armL, armR, tgtArm, armRow: out.length });
-        out.push(row1.join(""));
-        out.push(row2.join(""));
+        if (armR > armL) belowSpecs.push({ armL, armR, tgtArm });
       }
 
-      if (arcSpecs.length > 0) {
-        const grid = out.map((r) => Array.from(r));
-        for (const spec of arcSpecs) {
-          for (const col of [spec.armL, spec.armR]) {
-            const isArrow = col === spec.tgtArm;
-            let top = spec.armRow;
-            for (let r = spec.armRow - 1; r >= 0; r--) {
-              if ((grid[r][col] ?? " ") !== " ") break;
+      const blankCells = () => new Array(totalWidth).fill(" ");
+      const paintArrow = (cells, spec, head) => {
+        cells[spec.armL] = spec.tgtArm === spec.armL ? head : bc.v;
+        cells[spec.armR] = spec.tgtArm === spec.armR ? head : bc.v;
+      };
+      const paintCorner = (cells, spec, left, right) => {
+        cells[spec.armL] = left;
+        for (let c = spec.armL + 1; c < spec.armR; c++) cells[c] = bc.h;
+        cells[spec.armR] = right;
+      };
+      const extendArmsUp = (grid, specs) => {
+        for (const spec of specs) {
+          for (const c of [spec.armL, spec.armR]) {
+            const isArrow = c === spec.tgtArm;
+            let top = spec.arrowRow;
+            for (let r = spec.arrowRow - 1; r >= 0; r--) {
+              if ((grid[r][c] ?? " ") !== " ") break;
               top = r;
             }
-            for (let r = top; r < spec.armRow; r++) grid[r][col] = bc.v;
-            if (isArrow && top < spec.armRow) {
-              grid[spec.armRow][col] = bc.v;
-              grid[top][col] = "▲";
+            for (let r = top; r < spec.arrowRow; r++) grid[r][c] = bc.v;
+            if (isArrow && top < spec.arrowRow) {
+              grid[spec.arrowRow][c] = bc.v;
+              grid[top][c] = "▲";
             }
           }
         }
-        return grid.map((arr) => arr.join(""));
+      };
+
+      let bodyOut = out;
+
+      if (compact && belowSpecs.length === 2) {
+        belowSpecs.sort((a, b) => a.armR - a.armL - (b.armR - b.armL));
+        const arrowRowIdx = bodyOut.length;
+        const arrow = blankCells();
+        for (const spec of belowSpecs) {
+          paintArrow(arrow, spec, "▲");
+          spec.arrowRow = arrowRowIdx;
+        }
+        bodyOut.push(arrow.join(""));
+        for (const spec of belowSpecs) {
+          const corner = blankCells();
+          paintCorner(corner, spec, bc.bl, bc.br);
+          spec.cornerRow = bodyOut.length;
+          bodyOut.push(corner.join(""));
+        }
+        const grid = bodyOut.map((r) => Array.from(r));
+        // Outer arms drop through inner corner rows; staggered cols
+        // guarantee they land on blanks.
+        for (const spec of belowSpecs) {
+          for (const c of [spec.armL, spec.armR]) {
+            for (let r = arrowRowIdx + 1; r < spec.cornerRow; r++) {
+              if ((grid[r][c] ?? " ") === " ") grid[r][c] = bc.v;
+            }
+          }
+        }
+        extendArmsUp(grid, belowSpecs);
+        bodyOut = grid.map((arr) => arr.join(""));
+      } else if (belowSpecs.length > 0) {
+        for (const spec of belowSpecs) {
+          const arrow = blankCells();
+          paintArrow(arrow, spec, "▲");
+          spec.arrowRow = bodyOut.length;
+          bodyOut.push(arrow.join(""));
+          const corner = blankCells();
+          paintCorner(corner, spec, bc.bl, bc.br);
+          bodyOut.push(corner.join(""));
+        }
+        const grid = bodyOut.map((r) => Array.from(r));
+        extendArmsUp(grid, belowSpecs);
+        bodyOut = grid.map((arr) => arr.join(""));
       }
+
+      // Above-arcs sit flush against the box top (arrow becomes `▼`),
+      // so no extend-up is needed.
+      const aboveRows = [];
+      for (const r of aboveResolved) {
+        const armL = r.tgtStart + 2;
+        const armR = r.tgtStart + r.tgtW - 3;
+        if (armR <= armL) continue;
+        const spec = { armL, armR, tgtArm: armR };
+        const corner = blankCells();
+        paintCorner(corner, spec, bc.tl, bc.tr);
+        const arm = blankCells();
+        paintArrow(arm, spec, "▼");
+        aboveRows.push(corner.join(""), arm.join(""));
+      }
+      return aboveRows.concat(bodyOut);
     }
     return out;
   };
