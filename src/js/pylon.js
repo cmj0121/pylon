@@ -33,11 +33,6 @@
   // and are stripped from the label. Empty input falls back to the
   // default example.
   const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
-  // Default outer dimensions when the author hasn't declared a size
-  // in the frontmatter. Chosen to match the WYSIWYG preview pane and
-  // to give flow chains a generous canvas before the auto-wrap-to-
-  // vertical kicks in.
-  const DEFAULT_SIZE = { w: 60, h: 40 };
 
   const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
@@ -92,6 +87,23 @@
       .trim();
     return { align, clean };
   };
+
+  // Named node and reference tokens:
+  //
+  //   [ value :: name ] -- declare a node named `name`; the trailing
+  //                        '::' + identifier is stripped from the label.
+  //                        Using '::' (not a single colon) avoids
+  //                        collision with natural labels like
+  //                        '[Status: ok]' or '[- 12:00 -]'.
+  //   &name             -- reference a previously declared node; the
+  //                        reference is replaced with a clone of that
+  //                        node's subtree before rendering.
+  //
+  // Duplicate declarations and unresolved references are pushed onto
+  // `root._errors` so the host element can surface them (as a toast,
+  // not a native alert).
+  const NAME_RE = /::\s*([A-Za-z_]\w*)\s*$/;
+  const REF_RE = /^&([A-Za-z_]\w*)/;
 
   // Flow-edge tokens recognised between sibling nodes on the same line:
   //
@@ -210,6 +222,16 @@
       } else if (c === "\n") {
         flushLine();
         i++;
+      } else if (c === "&") {
+        const m = s.slice(i).match(REF_RE);
+        if (m) {
+          flushText();
+          lineItems.push({ type: "ref", name: m[1] });
+          i += m[0].length;
+          continue;
+        }
+        textBuf += c;
+        i++;
       } else if (c === "<" || c === "-") {
         const match = s.slice(i).match(EDGE_RE);
         const token = match ? match[0] : "";
@@ -255,12 +277,85 @@
     }
     const inner = s.slice(1, -1);
     const { align, clean } = extractAlign(inner);
-    return {
+    let body = clean;
+    let name;
+    const m = clean.match(NAME_RE);
+    if (m) {
+      name = m[1];
+      body = clean.slice(0, m.index).trimEnd();
+    }
+    const box = {
       type: "box",
       bordered,
       align,
-      items: parseItems(clean),
+      items: parseItems(body),
     };
+    if (name) box.name = name;
+    return box;
+  };
+
+  // Walk the AST and collect every `box.name` into `map`. A repeated
+  // name is recorded in `errors` -- the first occurrence wins so that
+  // `&name` lookups remain deterministic.
+  const collectNames = (item, map, errors) => {
+    if (!item || typeof item !== "object") return;
+    if (item.type === "box" && item.name) {
+      if (map.has(item.name)) {
+        errors.push(`Duplicate node name: ${item.name}`);
+      } else {
+        map.set(item.name, item);
+      }
+    }
+    if (Array.isArray(item.items)) {
+      for (const child of item.items) collectNames(child, map, errors);
+    }
+    if (item.type === "edge" && item.label) {
+      collectNames(item.label, map, errors);
+    }
+  };
+
+  // Replace every `ref` node with a deep clone of the named subtree.
+  // Cycles (a named node referencing itself transitively) collapse to
+  // the literal text `&name` so rendering cannot recurse forever.
+  // Unresolved names and cycles append to `errors` so typos surface
+  // alongside duplicate-name reports.
+  const resolveRef = (name, map, inFlight, errors) => {
+    if (inFlight.has(name)) {
+      errors.push(`Cyclic ref: &${name}`);
+      return { type: "text", content: "&" + name };
+    }
+    if (!map.has(name)) {
+      errors.push(`Undefined ref: &${name}`);
+      return { type: "text", content: "&" + name };
+    }
+    inFlight.add(name);
+    const clone = cloneResolved(map.get(name), map, inFlight, errors);
+    inFlight.delete(name);
+    return clone;
+  };
+
+  const cloneResolved = (item, map, inFlight, errors) => {
+    if (!item || typeof item !== "object") return item;
+    if (item.type === "ref") {
+      const expanded = resolveRef(item.name, map, inFlight, errors);
+      // The expansion is an *instance* of the declaration, not the
+      // declaration itself -- strip `name` so name-aware consumers
+      // don't see it as a second binding.
+      if (expanded && expanded.type === "box") delete expanded.name;
+      return expanded;
+    }
+    const clone = { ...item };
+    if (Array.isArray(item.items)) {
+      clone.items = item.items.map((c) =>
+        cloneResolved(c, map, inFlight, errors),
+      );
+    }
+    if (item.type === "edge") {
+      delete clone._labelRows;
+      if (item.label)
+        clone.label = cloneResolved(item.label, map, inFlight, errors);
+    }
+    return clone;
   };
 
   const parse = (source) => {
@@ -301,9 +396,16 @@
         items,
       };
     }
-    if (!meta.size) meta.size = { ...DEFAULT_SIZE };
     root.meta = meta;
-    return root;
+
+    const nameMap = new Map();
+    const errors = [];
+    collectNames(root, nameMap, errors);
+    const resolved = cloneResolved(root, nameMap, new Set(), errors);
+    if (errors.length) {
+      resolved._errors = [...new Set(errors)];
+    }
+    return resolved;
   };
 
   // ---- display width ----------------------------------------------------
@@ -610,8 +712,15 @@
     const naturalOuterW = naturalContentW + padBudget + borderBudget;
     const naturalOuterH = itemRows.length + borderBudget;
 
-    const outerW = targetW ?? naturalOuterW;
-    const outerH = targetH ?? naturalOuterH;
+    // `meta.size` is a MAXIMUM, not a fixed frame. When content is
+    // smaller than the declared size the box stays tight to its
+    // content; when content is larger, the outer is clamped to the
+    // declared size (flow chains have already wrapped via
+    // `sizedContentW`; unwrappable text is clipped by `clipRow`).
+    const outerW =
+      targetW !== undefined ? Math.min(naturalOuterW, targetW) : naturalOuterW;
+    const outerH =
+      targetH !== undefined ? Math.min(naturalOuterH, targetH) : naturalOuterH;
 
     const contentW = Math.max(0, outerW - borderBudget);
     const contentH = Math.max(0, outerH - borderBudget);
@@ -940,7 +1049,10 @@
         '<span class="pylon-guide-sep">·</span>' +
         "<code>[- x&nbsp;&nbsp;]</code> right" +
         '<span class="pylon-guide-sep">·</span>' +
-        "<code>[&nbsp;&nbsp;x -]</code> left</div>";
+        "<code>[&nbsp;&nbsp;x -]</code> left</div>" +
+        '<div><span class="pylon-guide-key">name:</span> <code>[x :: foo]</code>' +
+        '<span class="pylon-guide-sep">·</span>' +
+        '<span class="pylon-guide-key">ref:</span> <code>&amp;foo</code></div>';
 
       const toolbar = document.createElement("div");
       toolbar.className = "pylon-toolbar";
@@ -990,6 +1102,48 @@
       const color = getComputedStyle(this._viewHost).color;
       this._viewHost.innerHTML = "";
       this._viewHost.append(renderer(ast, { color }));
+      const errors = ast._errors;
+      if (errors?.length) {
+        this._showToast(errors.join("\n"));
+      } else {
+        this._clearToast();
+      }
+    }
+
+    // Component-scoped toast. Single instance: a new error replaces
+    // the previous toast and resets the auto-dismiss timer. The
+    // message is compared to the currently shown text so rapid edits
+    // that keep triggering the same error don't cause a visible
+    // flicker each keystroke.
+    _showToast(message) {
+      if (this._toastEl && this._toastEl.textContent === message) {
+        this._resetToastTimer();
+        return;
+      }
+      this._clearToast();
+      const toast = document.createElement("div");
+      toast.className = "pylon-toast";
+      toast.setAttribute("role", "alert");
+      toast.textContent = message;
+      this.append(toast);
+      this._toastEl = toast;
+      this._resetToastTimer();
+    }
+
+    _resetToastTimer() {
+      if (this._toastTimer) clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => this._clearToast(), 3200);
+    }
+
+    _clearToast() {
+      if (this._toastTimer) {
+        clearTimeout(this._toastTimer);
+        this._toastTimer = null;
+      }
+      if (this._toastEl) {
+        this._toastEl.remove();
+        this._toastEl = null;
+      }
     }
 
     _makeToolbarButton(label, onClick) {

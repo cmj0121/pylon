@@ -23,10 +23,10 @@ As the markdown, you can specified the metadata in the header of the graph, with
 the metadata and the graph content. The metadata can be used to specify the size, theme, and other properties of the
 graph, more metadata will be added in the future.
 
-| Key   | Value Type | Description                                              |
-| ----- | ---------- | -------------------------------------------------------- |
-| size  | int x int  | Define the size of the graph                             |
-| theme | string     | Define the theme of the graph (e.g. ascii, dark, light). |
+| Key   | Value Type | Description                                               |
+| ----- | ---------- | --------------------------------------------------------- |
+| size  | int x int  | Maximum outer width x height (content stays tight below). |
+| theme | string     | Define the theme of the graph (e.g. ascii, dark, light).  |
 
 ### Render
 
@@ -182,6 +182,15 @@ Flow chains (siblings on a single line, connected by edges):
 - `[ Alice ] -- ( friend ) --> [ Bob ]` — labelled edge. The label is any borderless node written between the two
   edge halves; bidirectional `<-- ( role ) -->` and reverse `<-- ( role ) --` also work.
 
+Named nodes and references:
+
+- `[ value :: name ]` — declare a node named `name`. The trailing `::` + identifier is stripped from the rendered
+  label and attached to the AST. Applies to `(...)` as well.
+- `&name` — reference a previously declared node; the reference renders as a clone of that node's subtree. Works
+  inline in flow chains (`[ A ] -> &name`) or as a standalone stacked item.
+- Duplicate declarations and unresolved / cyclic references surface as a toast inside the `<pylon-chart>` element
+  (no native `alert`).
+
 Frontmatter (YAML-subset, at the head of the source, fenced by `---`):
 
 ```pylon
@@ -192,8 +201,9 @@ theme: simple | ascii | dark | light
 [- Hello -]
 ```
 
-`size` forces outer width / height and centers content; `theme` swaps the palette (or switches the ASCII backend
-to plain `+-|` glyphs when `ascii`). Both are optional.
+`size` is a maximum — content stays tight to its own dimensions when smaller, and flow chains wrap to a vertical
+stack when a line would exceed the declared width. `theme` swaps the palette (or switches the ASCII backend to
+plain `+-|` glyphs when `ascii`). Both are optional.
 
 Multiple top-level nodes stack vertically:
 
