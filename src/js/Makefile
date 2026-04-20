@@ -9,8 +9,8 @@ all: build			# default action
 clean:				# clean-up environment
 	@rm -rf $(DIST)
 
-test:				# run test
-	@echo "no tests yet"
+test: build			# smoke-test the minified bundle
+	@node smoke.mjs
 
 run:				# serve the demo at http://localhost:$(PORT)
 	@echo "serving src/js at http://localhost:$(PORT)/ -- press Ctrl-C to stop"

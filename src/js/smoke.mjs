@@ -1,0 +1,195 @@
+// Smoke-test the minified bundle.
+//
+// Loads dist/pylon.min.js through a minimal DOM shim, renders a small
+// set of fixtures, and exits non-zero if any assertion fails. Assertions
+// are structural (row count, glyph presence) rather than exact strings
+// so rendering tweaks don't tax fixtures.
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const bundle = resolve(here, "../../dist/pylon.min.js");
+
+class VNode {
+  constructor(tag) {
+    this.tagName = tag;
+    this.children = [];
+    this.attrs = {};
+    this.dataset = {};
+    this.style = {};
+    this.innerHTML = "";
+    this._textContent = "";
+    this._value = "";
+    this.classList = {
+      add: (c) => (this.className = ((this.className || "") + " " + c).trim()),
+      contains: () => false,
+    };
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = v;
+  }
+  getAttribute(k) {
+    return this.attrs[k] ?? null;
+  }
+  hasAttribute(k) {
+    return k in this.attrs;
+  }
+  removeAttribute(k) {
+    delete this.attrs[k];
+  }
+  append(...kids) {
+    for (const k of kids) this.children.push(k);
+  }
+  appendChild(k) {
+    this.children.push(k);
+  }
+  addEventListener() {}
+  get value() {
+    return this._value;
+  }
+  set value(v) {
+    this._value = v;
+  }
+  get textContent() {
+    return this._textContent ?? "";
+  }
+  set textContent(v) {
+    this._textContent = v;
+  }
+}
+
+globalThis.window = globalThis;
+globalThis.HTMLElement = VNode;
+globalThis.customElements = {
+  _defs: {},
+  get(n) {
+    return this._defs[n];
+  },
+  define(n, c) {
+    this._defs[n] = c;
+  },
+};
+globalThis.document = {
+  createElement: (t) => new VNode(t),
+  createTextNode: (t) => {
+    const n = new VNode("#text");
+    n._textContent = t;
+    return n;
+  },
+};
+globalThis.getComputedStyle = () => ({ color: "#0f1c2d" });
+globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+// Function-constructor eval so the bundle runs in a fresh scope but
+// still sees globalThis (where our shim lives).
+new Function(readFileSync(bundle, "utf8"))();
+
+const Element = globalThis.customElements._defs["pylon-chart"];
+if (!Element) {
+  console.error("FAIL: pylon-chart custom element not registered");
+  process.exit(1);
+}
+
+const render = (src) => {
+  const el = new Element();
+  el._source = src;
+  el._viewHost = new VNode("div");
+  el._format = "ascii";
+  el._mount = () => {};
+  el._render();
+  const pre = el._viewHost.children.find((c) => c.tagName === "pre");
+  let out = "";
+  const emit = (n) => {
+    if (!n) return;
+    if (n.tagName === "#text") {
+      out += n._textContent;
+      return;
+    }
+    if (n.children?.length) {
+      for (const c of n.children) emit(c);
+      return;
+    }
+    out += n._textContent || "";
+  };
+  for (const c of pre.children) emit(c);
+  return out;
+};
+
+const fixtures = [
+  {
+    name: "single bordered node",
+    src: "[- a -]",
+    expect: (o) =>
+      o.includes("┌") && o.includes("│   a   │") && o.includes("└"),
+  },
+  {
+    name: "flow chain with two forward arrows",
+    src: "[ Start ] -> [ Process ] -> [ End ]",
+    expect: (o) =>
+      (o.match(/─▶/g) || []).length === 2 &&
+      ["Start", "Process", "End"].every((s) => o.includes(s)),
+  },
+  {
+    name: "same-row self-loop renders under the box",
+    src: "[- a :: x -] -> &x",
+    expect: (o) => o.includes("▲") && o.includes("└───┘"),
+  },
+  {
+    name: "two cross-box arcs nest into compact 3-row bundle",
+    src: "[- a :: x -] -> [- b :: y -] -> &x -> &y",
+    // 3 box rows + 3 arc rows is the compact shape. Tolerate ±1 so a
+    // future vertical-padding nudge doesn't falsely fail.
+    expect: (o) => {
+      const lines = o.split("\n");
+      return (
+        lines.length >= 5 &&
+        lines.length <= 7 &&
+        (o.match(/▲/g) || []).length === 2 &&
+        o.includes("└──────────────┘")
+      );
+    },
+  },
+  {
+    name: "self-loop hops above when mixed with cross-box",
+    src: "[- a :: x -] -> [- b -] -> &x -> &x",
+    expect: (o) =>
+      o.includes("▼") && /^\s+┌/.test(o) && o.includes("└──────────┘"),
+  },
+  {
+    name: "ascii theme swaps unicode glyphs for + - | < >",
+    src: "---\ntheme: ascii\n---\n[- Hello -]",
+    expect: (o) =>
+      o.includes("+") && o.includes("|   Hello   |") && !o.includes("┌"),
+  },
+];
+
+let failed = 0;
+for (const f of fixtures) {
+  try {
+    const out = render(f.src);
+    if (!f.expect(out)) {
+      failed++;
+      console.error(`FAIL: ${f.name}`);
+      console.error("  source: " + JSON.stringify(f.src));
+      console.error(
+        "  output:\n" +
+          out
+            .split("\n")
+            .map((l) => "    " + l)
+            .join("\n"),
+      );
+    } else {
+      console.log(`ok  : ${f.name}`);
+    }
+  } catch (err) {
+    failed++;
+    console.error(`FAIL: ${f.name}: ${err.message}`);
+  }
+}
+if (failed > 0) {
+  console.error(`\n${failed} of ${fixtures.length} fixtures failed`);
+  process.exit(1);
+}
+console.log(`\n${fixtures.length} fixtures passed`);
