@@ -1202,7 +1202,67 @@
   // it up against `ast.meta.data`, and dispatches. Errors short-
   // circuit to a single inline `⚠ ...` row.
   const BAR_WIDTH_DEFAULT = 10;
+  const BAR_HEIGHT_DEFAULT = 10;
   const BAR_GLYPH = "\u2588";
+
+  // Shared validation for bar-family renderers (hbar, vbar). Returns an
+  // inline-error row array on failure or `null` on success. `name` is
+  // the invoked renderer name so the error text carries it.
+  const validateBarSeries = (refValue, hasRef, name) => {
+    if (!hasRef) return [`\u26a0 ${name}: use @ref`];
+    if (!Array.isArray(refValue)) {
+      return [`\u26a0 ${name}: expected [{x,y}]`];
+    }
+    if (refValue.length === 0) return [`\u26a0 ${name}: empty series`];
+    const seenX = new Set();
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") {
+        return [`\u26a0 ${name}: expected [{x,y}]`];
+      }
+      if (!("x" in entry) || !("y" in entry)) {
+        return [`\u26a0 ${name}: expected [{x,y}]`];
+      }
+      if (typeof entry.y !== "number" || Number.isNaN(entry.y)) {
+        return [`\u26a0 ${name}: expected [{x,y}]`];
+      }
+      if (entry.y < 0) return [`\u26a0 ${name}: negative y`];
+      const xKey = String(entry.x);
+      if (seenX.has(xKey)) {
+        return [`\u26a0 ${name}: duplicate x "${xKey}"`];
+      }
+      seenX.add(xKey);
+    }
+    return null;
+  };
+
+  // Horizontal-bar body shared by the `hbar` renderer and its `bar`
+  // alias. `name` is threaded through so validation errors carry the
+  // renderer name the user actually invoked.
+  const renderHBar = (box, items, refValue, hasRef, bc, budgetW, name) => {
+    const err = validateBarSeries(refValue, hasRef, name);
+    if (err) return err;
+    // Left labels (the `x` column). Pad to a uniform width so every
+    // row's separator lines up.
+    const labels = refValue.map((e) => String(e.x));
+    const labelW = labels.reduce((m, s) => Math.max(m, s.length), 0);
+    const values = refValue.map((e) => `(${e.y})`);
+    const valueW = values.reduce((m, s) => Math.max(m, s.length), 0);
+    const maxY = refValue.reduce((m, e) => Math.max(m, e.y), 0);
+    const budget = Math.max(1, budgetW ?? BAR_WIDTH_DEFAULT);
+    const barCells = (y) => {
+      if (maxY === 0) return 0;
+      return Math.round((y / maxY) * budget);
+    };
+    return refValue.map((entry, i) => {
+      const label = labels[i].padStart(labelW, " ");
+      const bars = BAR_GLYPH.repeat(barCells(entry.y));
+      const valStr = values[i].padStart(valueW, " ");
+      const body = (
+        bars + " ".repeat(Math.max(1, budget - bars.length + 1))
+      ).slice(0, budget + 1);
+      return `${label} ${bc.v} ${body}${valStr} ${bc.v}`;
+    });
+  };
 
   const chartRenderers = {
     text(box, items, refValue, hasRef, bc) {
@@ -1214,51 +1274,60 @@
       return [JSON.stringify(refValue)];
     },
 
+    hbar(box, items, refValue, hasRef, bc, budgetW) {
+      return renderHBar(box, items, refValue, hasRef, bc, budgetW, "hbar");
+    },
+
+    // v0.1 alias: `bar` keeps the original horizontal semantics by
+    // delegating to the shared horizontal body. The name is passed
+    // through so validation errors read `⚠ bar:` to match what the
+    // user actually typed.
     bar(box, items, refValue, hasRef, bc, budgetW) {
-      if (!hasRef) return ["\u26a0 bar: use @ref"];
-      if (!Array.isArray(refValue)) {
-        return ["\u26a0 bar: expected [{x,y}]"];
-      }
-      if (refValue.length === 0) return ["\u26a0 bar: empty series"];
-      const seenX = new Set();
-      for (const entry of refValue) {
-        if (!entry || typeof entry !== "object") {
-          return ["\u26a0 bar: expected [{x,y}]"];
-        }
-        if (!("x" in entry) || !("y" in entry)) {
-          return ["\u26a0 bar: expected [{x,y}]"];
-        }
-        if (typeof entry.y !== "number" || Number.isNaN(entry.y)) {
-          return ["\u26a0 bar: expected [{x,y}]"];
-        }
-        if (entry.y < 0) return ["\u26a0 bar: negative y"];
-        const xKey = String(entry.x);
-        if (seenX.has(xKey)) {
-          return [`\u26a0 bar: duplicate x "${xKey}"`];
-        }
-        seenX.add(xKey);
-      }
-      // Left labels (the `x` column). Pad to a uniform width so every
-      // row's separator lines up.
+      return renderHBar(box, items, refValue, hasRef, bc, budgetW, "bar");
+    },
+
+    // Vertical bars. Mirrors `hbar`'s 10-cell budget, but the budget is
+    // the chart HEIGHT rather than width. Each series entry becomes a
+    // single-column bar, centered within a column whose width accounts
+    // for its label / `(value)` text. Footer rows carry the labels.
+    vbar(box, items, refValue, hasRef, bc) {
+      const err = validateBarSeries(refValue, hasRef, "vbar");
+      if (err) return err;
       const labels = refValue.map((e) => String(e.x));
-      const labelW = labels.reduce((m, s) => Math.max(m, s.length), 0);
       const values = refValue.map((e) => `(${e.y})`);
-      const valueW = values.reduce((m, s) => Math.max(m, s.length), 0);
+      const colW = refValue.map((_, i) =>
+        Math.max(labels[i].length, values[i].length, 3),
+      );
       const maxY = refValue.reduce((m, e) => Math.max(m, e.y), 0);
-      const budget = Math.max(1, budgetW ?? BAR_WIDTH_DEFAULT);
-      const barCells = (y) => {
+      const budget = BAR_HEIGHT_DEFAULT;
+      const barH = refValue.map((e) => {
         if (maxY === 0) return 0;
-        return Math.round((y / maxY) * budget);
-      };
-      return refValue.map((entry, i) => {
-        const label = labels[i].padStart(labelW, " ");
-        const bars = BAR_GLYPH.repeat(barCells(entry.y));
-        const valStr = values[i].padStart(valueW, " ");
-        const body = (
-          bars + " ".repeat(Math.max(1, budget - bars.length + 1))
-        ).slice(0, budget + 1);
-        return `${label} ${bc.v} ${body}${valStr} ${bc.v}`;
+        return Math.round((e.y / maxY) * budget);
       });
+      // Center `s` within `w` cells using pad-before/pad-after.
+      const centerIn = (s, w) => {
+        const left = Math.floor((w - s.length) / 2);
+        const right = w - s.length - left;
+        return (
+          " ".repeat(Math.max(0, left)) + s + " ".repeat(Math.max(0, right))
+        );
+      };
+      const rows = [];
+      // Bar rows, top-down. A bar of height h occupies the bottom h of
+      // `budget` rows; the top (budget - h) rows are whitespace.
+      for (let r = 0; r < budget; r++) {
+        const fromBottom = budget - r; // 1-based distance from baseline
+        let line = "";
+        for (let i = 0; i < refValue.length; i++) {
+          const glyph = barH[i] >= fromBottom ? BAR_GLYPH : " ";
+          line += centerIn(glyph, colW[i]);
+        }
+        rows.push(line);
+      }
+      // Footer row 1: x label. Footer row 2: `(y)` value.
+      rows.push(labels.map((s, i) => centerIn(s, colW[i])).join(""));
+      rows.push(values.map((s, i) => centerIn(s, colW[i])).join(""));
+      return rows;
     },
   };
 
