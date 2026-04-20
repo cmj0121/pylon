@@ -44,9 +44,13 @@ pylon-chart {
   --pylon-pad: 0.875rem;
 }
 
+/* Dark palette -- applied automatically under prefers-color-scheme: dark
+   and manually via [data-theme="dark"]. The attribute selector wins
+   against the media query by specificity, so frontmatter theme: light
+   still forces the defaults under a dark OS preference. */
 @media (prefers-color-scheme: dark) {
   :root,
-  pylon-chart {
+  pylon-chart:not([data-theme="light"]) {
     --pylon-ink: #e6dfc8;
     --pylon-ink-soft: #95a0b4;
     --pylon-paper: #171d28;
@@ -56,6 +60,17 @@ pylon-chart {
     --pylon-accent: #7ab3dc;
     --pylon-focus-ring: rgba(122, 179, 220, 0.28);
   }
+}
+
+pylon-chart[data-theme="dark"] {
+  --pylon-ink: #e6dfc8;
+  --pylon-ink-soft: #95a0b4;
+  --pylon-paper: #171d28;
+  --pylon-paper-sunk: #10151e;
+  --pylon-rule: #2c3342;
+  --pylon-grid: rgba(230, 223, 200, 0.05);
+  --pylon-accent: #7ab3dc;
+  --pylon-focus-ring: rgba(122, 179, 220, 0.28);
 }
 
 /* ---- element shell -------------------------------------------------- */
@@ -112,6 +127,35 @@ pylon-chart[wysiwyg] {
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
+}
+
+.pylon-guide {
+  padding: 0.45rem 0.65rem;
+  background: var(--pylon-paper);
+  border: var(--pylon-border);
+  border-radius: var(--pylon-radius);
+  color: var(--pylon-ink-soft);
+  font-family: var(--pylon-font-mono);
+  font-size: 0.68rem;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+}
+
+.pylon-guide code {
+  font: inherit;
+  color: var(--pylon-ink);
+  background: transparent;
+  padding: 0;
+}
+
+.pylon-guide .pylon-guide-key {
+  color: var(--pylon-accent);
+  margin-right: 0.4ch;
+}
+
+.pylon-guide .pylon-guide-sep {
+  margin: 0 0.7ch;
+  opacity: 0.5;
 }
 
 .pylon-toolbar {

@@ -22,33 +22,179 @@
 (() => {
   // ---- stub parser ------------------------------------------------------
   // Replace with the real Pylon parser later. For now, any input becomes
-  // a single-box AST:
-  //   [ ... ]   bordered node
-  //   ( ... )   borderless node
-  //   otherwise plain text in a bordered node
-  // Leading and trailing '-' inside the brackets are alignment markers and
-  // are stripped. Empty input falls back to the default example.
+  // a single-box AST with an optional frontmatter block:
+  //   ---
+  //   size:  WxH          # outer dimensions in cells
+  //   theme: IDENT        # reserved -- applied by later commits
+  //   ---
+  //   [ ... ]             # bordered node
+  //   ( ... )             # borderless node
+  // Leading and trailing '-' inside the brackets are alignment markers
+  // and are stripped from the label. Empty input falls back to the
+  // default example.
   const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
 
-  const parse = (source) => {
-    const raw = (source ?? "").trim() || DEFAULT_EXAMPLE;
+  const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
-    let bordered = true;
-    let inner = raw;
-    if (raw.startsWith("[") && raw.endsWith("]")) {
-      bordered = true;
-      inner = raw.slice(1, -1);
-    } else if (raw.startsWith("(") && raw.endsWith(")")) {
-      bordered = false;
-      inner = raw.slice(1, -1);
+  const parseFrontmatter = (text) => {
+    const meta = {};
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$/);
+      if (!m) continue;
+      const [, key, raw] = m;
+      if (key === "size") {
+        const s = raw.match(/^(\d+)\s*[xX]\s*(\d+)$/);
+        if (s) meta.size = { w: parseInt(s[1], 10), h: parseInt(s[2], 10) };
+      } else if (key === "theme") {
+        meta.theme = raw;
+      }
+    }
+    return meta;
+  };
+
+  // Find the matching close bracket for s[start] (which must be '[' or '(').
+  // Counts only the same bracket kind -- well-formed input has () and [] pairs
+  // nested independently.
+  const findMatching = (s, start) => {
+    const open = s[start];
+    const close = open === "[" ? "]" : open === "(" ? ")" : null;
+    if (!close) return -1;
+    let depth = 0;
+    for (let i = start; i < s.length; i++) {
+      if (s[i] === open) depth++;
+      else if (s[i] === close) {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  };
+
+  // Extract leading / trailing '-' alignment springs from an inner string.
+  // The dash must be flush with the bracket -- '[-' and '-]' count,
+  // '[ -' and '- ]' do not (those are literal dashes inside the label).
+  const ALIGN_LEFT_RE = /^-\s+/;
+  const ALIGN_RIGHT_RE = /\s+-$/;
+  const extractAlign = (inner) => {
+    const hasLeft = ALIGN_LEFT_RE.test(inner);
+    const hasRight = ALIGN_RIGHT_RE.test(inner);
+    let align = "center";
+    if (hasLeft && !hasRight) align = "right";
+    else if (!hasLeft && hasRight) align = "left";
+    const clean = inner
+      .replace(ALIGN_LEFT_RE, "")
+      .replace(ALIGN_RIGHT_RE, "")
+      .trim();
+    return { align, clean };
+  };
+
+  // Split the inner content of a box into an ordered list of items.
+  // Items are either child nodes or text runs; newlines break text into
+  // separate items so multi-line content stacks vertically.
+  const parseItems = (s) => {
+    const items = [];
+    let textBuf = "";
+    const flushText = () => {
+      const t = textBuf.trim();
+      if (t) items.push({ type: "text", content: t });
+      textBuf = "";
+    };
+    let i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (c === "[" || c === "(") {
+        flushText();
+        const end = findMatching(s, i);
+        if (end < 0) {
+          // Unmatched: swallow as literal text so parsing stays lenient.
+          textBuf += c;
+          i++;
+          continue;
+        }
+        items.push(parseBracketedNode(s.slice(i, end + 1)));
+        i = end + 1;
+      } else if (c === "\n") {
+        flushText();
+        i++;
+      } else {
+        textBuf += c;
+        i++;
+      }
+    }
+    flushText();
+    return items;
+  };
+
+  // Parse a single box, given the slice that starts with '[' or '(' and
+  // ends with the matching ']' or ')'.
+  const parseBracketedNode = (s) => {
+    const open = s[0];
+    const bordered = open === "[";
+    const close = bordered ? "]" : ")";
+    if (!s.endsWith(close)) {
+      return {
+        type: "box",
+        bordered: true,
+        align: "center",
+        items: [{ type: "text", content: s.trim() }],
+      };
+    }
+    const inner = s.slice(1, -1);
+    const { align, clean } = extractAlign(inner);
+    return {
+      type: "box",
+      bordered,
+      align,
+      items: parseItems(clean),
+    };
+  };
+
+  const parse = (source) => {
+    const src = (source ?? "").trim();
+    if (!src) return parse(DEFAULT_EXAMPLE);
+
+    let meta = {};
+    let body = src;
+    const fm = src.match(FRONTMATTER_RE);
+    if (fm) {
+      meta = parseFrontmatter(fm[1]);
+      body = src.slice(fm[0].length).trim();
+      if (!body) body = DEFAULT_EXAMPLE;
     }
 
-    const label = inner
-      .replace(/^\s*-\s+/, "")
-      .replace(/\s+-\s*$/, "")
-      .trim();
-
-    return { type: "box", label, bordered };
+    // Top-level is conceptually always an implicit '( ... )' -- a
+    // borderless container -- so multiple sibling nodes stack:
+    //
+    //   [Hello]
+    //   (World)
+    //
+    // parses as two top-level items. When the user writes exactly one
+    // bracketed node we use it directly so SVG / PNG can paint a real
+    // vector rect; when they write more than one we wrap in the
+    // implicit borderless root.
+    const items = parseItems(body);
+    let root;
+    if (items.length === 1 && items[0].type === "box") {
+      root = items[0];
+    } else if (items.length === 1) {
+      // Single bare text run: keep the legacy implicit-bordered wrap
+      // so bare labels still render with a box.
+      root = {
+        type: "box",
+        bordered: true,
+        align: "center",
+        items,
+      };
+    } else {
+      root = {
+        type: "box",
+        bordered: false,
+        align: "center",
+        items,
+      };
+    }
+    root.meta = meta;
+    return root;
   };
 
   // ---- display width ----------------------------------------------------
@@ -113,31 +259,215 @@
     return w;
   };
 
+  // ---- layout / row rendering ------------------------------------------
+  // Recursively reduce an AST into a flat array of text rows. Each row is
+  // a string of display cells ready to paint. Nested boxes render as their
+  // own multi-row box (ASCII glyphs + alignment); borderless wrappers just
+  // pass their items' rows through. Every backend (ASCII / SVG / PNG)
+  // consumes these rows so they all agree on shape and alignment.
+  //
+  //  - natural-pad  3 cells on each side of content in a bordered box
+  //  - cell -> px   10 wide, 20 tall for SVG / PNG
+  const NATURAL_PAD = 3;
+  const CELL_PX_W = 10;
+  const CELL_PX_H = 20;
+
+  // Pad a single row (string) to targetW display cells, placing the row
+  // according to align ('left' | 'center' | 'right'). Reserve minPad
+  // cells on the pushed-against edge so left / right alignment keeps
+  // the content off the border wall unless the slack is too tight.
+  const padRow = (row, targetW, align, minPad = 1) => {
+    const rowW = displayWidth(row);
+    const slack = Math.max(0, targetW - rowW);
+    if (slack === 0) return row;
+    if (slack <= 2 * minPad || align === "center") {
+      const l = Math.floor(slack / 2);
+      return " ".repeat(l) + row + " ".repeat(slack - l);
+    }
+    if (align === "right") {
+      return " ".repeat(slack - minPad) + row + " ".repeat(minPad);
+    }
+    return " ".repeat(minPad) + row + " ".repeat(slack - minPad);
+  };
+
+  // Truncate a row (if it's wider than targetW) along grapheme-ish
+  // boundaries, counting display width. Cheap; good enough for MVP.
+  const clipRow = (row, targetW) => {
+    if (displayWidth(row) <= targetW) return row;
+    let w = 0;
+    let out = "";
+    for (const ch of row) {
+      const cw = charWidth(ch.codePointAt(0));
+      if (w + cw > targetW) break;
+      out += ch;
+      w += cw;
+    }
+    return out;
+  };
+
+  // Distribute the "extra" vertical rows (beyond the content) above and
+  // below the body so multi-row content sits vertically centered in a
+  // larger sized box.
+  const vertPad = (rows, targetH, contentW) => {
+    const extra = Math.max(0, targetH - rows.length);
+    if (extra === 0) return rows;
+    const top = Math.floor(extra / 2);
+    const bot = extra - top;
+    const blank = " ".repeat(contentW);
+    return [
+      ...new Array(top).fill(blank),
+      ...rows,
+      ...new Array(bot).fill(blank),
+    ];
+  };
+
+  // Render an item (text or box) to its natural rows.
+  const renderItemRows = (item, bc) => {
+    if (item.type === "text") return [item.content];
+    if (item.type === "box") return renderBoxRows(item, bc);
+    return [];
+  };
+
+  // Render a box AST to a flat array of rows. When targetW / targetH are
+  // provided, the box is forced to those outer dimensions; otherwise it
+  // auto-sizes to its content plus natural padding.
+  //
+  // A node gets natural side-padding when it's either:
+  //   - bordered (always -- the padding sits between content and border)
+  //   - a borderless container holding two or more items (so align
+  //     springs on the wrapper have visible space to push the stack).
+  // Single-item borderless wrappers stay transparent: (World) prints
+  // "World" and ([x]) prints the contents of [x] verbatim.
+  const renderBoxRows = (ast, bc, { targetW, targetH } = {}) => {
+    const { items = [], align = "center", bordered } = ast;
+
+    const itemRows = items.flatMap((it) => renderItemRows(it, bc));
+    const naturalContentW = itemRows.reduce(
+      (max, r) => Math.max(max, displayWidth(r)),
+      1,
+    );
+
+    const hasPad = bordered || items.length > 1;
+    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    const borderBudget = bordered ? 2 : 0;
+
+    const naturalOuterW = naturalContentW + padBudget + borderBudget;
+    const naturalOuterH = itemRows.length + borderBudget;
+
+    const outerW = targetW ?? naturalOuterW;
+    const outerH = targetH ?? naturalOuterH;
+
+    const contentW = Math.max(0, outerW - borderBudget);
+    const contentH = Math.max(0, outerH - borderBudget);
+
+    const clipped = itemRows.map((r) => clipRow(r, contentW));
+    const paddedH = vertPad(clipped, contentH, contentW);
+    const padded = paddedH.map((r) => padRow(r, contentW, align));
+
+    if (!bordered) return padded;
+
+    const hLine = bc.h.repeat(contentW);
+    return [
+      bc.tl + hLine + bc.tr,
+      ...padded.map((r) => bc.v + r + bc.v),
+      bc.bl + hLine + bc.br,
+    ];
+  };
+
+  // Top-level render entry: honors meta.size on the root node only.
+  const renderRows = (ast) => {
+    const bc = boxChars(ast);
+    const size = ast.meta?.size;
+    return renderBoxRows(ast, bc, { targetW: size?.w, targetH: size?.h });
+  };
+
+  // Shared helpers for the SVG / PNG backends. Each row becomes one line
+  // of paint; when the root has a real vector border we skip the outer
+  // glyphs (rows[0] and rows[-1]) and strip the side glyphs so the text
+  // is not doubled over the vector rect.
+  const maxRowWidth = (rows) =>
+    rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+
+  const paintableBody = (ast, row) => (ast.bordered ? row.slice(1, -1) : row);
+
+  const paintableRange = (ast, rows) => ({
+    first: ast.bordered ? 1 : 0,
+    last: ast.bordered ? rows.length - 1 : rows.length,
+  });
+
+  const FONT_STACK_MONO = "ui-monospace, Menlo, Consolas, monospace";
+  const FONT_SIZE_PX = CELL_PX_H * 0.7;
+
+  const drawCanvasBorder = (ctx, w, h, color) => {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = color;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+    }
+  };
+
+  // Build a canvas that paints the rows. Shared by the display renderer
+  // (wraps the canvas in an <img>) and the PNG exporter (converts it to
+  // a Blob).
+  const paintCanvas = (ast, rows, color) => {
+    const w = maxRowWidth(rows) * CELL_PX_W;
+    const h = rows.length * CELL_PX_H;
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    if (ast.bordered) drawCanvasBorder(ctx, w, h, color);
+    ctx.fillStyle = color;
+    ctx.font = `${FONT_SIZE_PX}px ${FONT_STACK_MONO}`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    const range = paintableRange(ast, rows);
+    const x = ast.bordered ? CELL_PX_W : 0;
+    for (let i = range.first; i < range.last; i++) {
+      ctx.fillText(paintableBody(ast, rows[i]), x, (i + 0.5) * CELL_PX_H);
+    }
+    return { canvas, w, h };
+  };
+
+  // ---- themes -----------------------------------------------------------
+  // Known themes and their effect:
+  //   simple         default (Unicode box chars, CSS auto-palette)
+  //   ascii          ASCII-only box chars (+ - |) for the ASCII backend
+  //   dark / light   force the CSS palette regardless of prefers-color-scheme
+  // Unknown themes are passed through to the data-theme attribute so
+  // adopters can add custom palettes in their own stylesheet.
+  const UNICODE_BOX = {
+    tl: "┌",
+    tr: "┐",
+    bl: "└",
+    br: "┘",
+    h: "─",
+    v: "│",
+  };
+  const ASCII_BOX = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|" };
+  const boxChars = (ast) =>
+    ast.meta?.theme === "ascii" ? ASCII_BOX : UNICODE_BOX;
+
   // ---- renderers --------------------------------------------------------
+  //
+  // Each backend takes the rows from renderRows(ast) and paints them in
+  // its medium. The rows already carry any nested box borders drawn with
+  // ASCII glyphs, so SVG / PNG render them as a grid of monospace text
+  // (plus an outer vector rect when the root is bordered).
   const renderers = {
     ascii(ast) {
-      const { label, bordered } = ast;
+      const rows = renderRows(ast);
       const pre = document.createElement("pre");
       pre.className = "pylon-ascii";
-      if (!bordered) {
-        pre.textContent = label;
-        return pre;
-      }
-      // Unicode box-drawing glyphs + 3-col horizontal padding. Every
-      // character is placed in its own fixed-width cell so the border
-      // stays aligned regardless of how the browser's fallback font
-      // renders CJK or emoji. The raw text (┌─┐│└┘) is preserved in
-      // the DOM so selecting and copying the output yields usable
-      // ASCII art that can be pasted into a terminal or markdown.
-      const dw = displayWidth(label);
-      const pad = 3;
-      const line = "─".repeat(dw + pad * 2);
-      const sp = " ".repeat(pad);
-      const rows = [
-        "┌" + line + "┐",
-        "│" + sp + label + sp + "│",
-        "└" + line + "┘",
-      ];
+      // Per-cell DOM so CJK / emoji stay aligned regardless of font.
       for (let i = 0; i < rows.length; i++) {
         if (i > 0) pre.append(document.createTextNode("\n"));
         for (const ch of rows[i]) {
@@ -157,17 +487,18 @@
     },
 
     svg(ast) {
-      const { label, bordered } = ast;
-      const dw = displayWidth(label);
-      const w = dw * 10 + 32;
-      const h = 48;
+      const rows = renderRows(ast);
+      const w = maxRowWidth(rows) * CELL_PX_W;
+      const h = rows.length * CELL_PX_H;
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg");
       svg.setAttribute("width", w);
       svg.setAttribute("height", h);
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.classList.add("pylon-svg");
-      if (bordered) {
+      // Root border as a real vector rect; nested inner borders are
+      // left as text glyphs in the rows.
+      if (ast.bordered) {
         const rect = document.createElementNS(ns, "rect");
         rect.setAttribute("x", 1);
         rect.setAttribute("y", 1);
@@ -179,49 +510,30 @@
         rect.setAttribute("stroke-width", "1");
         svg.append(rect);
       }
-      const t = document.createElementNS(ns, "text");
-      t.setAttribute("x", w / 2);
-      t.setAttribute("y", h / 2);
-      t.setAttribute("text-anchor", "middle");
-      t.setAttribute("dominant-baseline", "middle");
-      t.setAttribute("font-family", "monospace");
-      t.setAttribute("font-size", "14");
-      t.setAttribute("fill", "currentColor");
-      t.textContent = label;
-      svg.append(t);
+      const range = paintableRange(ast, rows);
+      const x = ast.bordered ? CELL_PX_W : 0;
+      for (let i = range.first; i < range.last; i++) {
+        const t = document.createElementNS(ns, "text");
+        t.setAttribute("x", x);
+        t.setAttribute("y", (i + 0.5) * CELL_PX_H);
+        t.setAttribute("text-anchor", "start");
+        t.setAttribute("dominant-baseline", "middle");
+        t.setAttribute("font-family", "monospace");
+        t.setAttribute("font-size", FONT_SIZE_PX);
+        t.setAttribute("xml:space", "preserve");
+        t.setAttribute("fill", "currentColor");
+        t.textContent = paintableBody(ast, rows[i]);
+        svg.append(t);
+      }
       return svg;
     },
 
     png(ast, opts = {}) {
-      const { label, bordered } = ast;
-      const color = opts.color || "#000";
-      const dw = displayWidth(label);
-      const w = dw * 10 + 32;
-      const h = 48;
-      const dpr = window.devicePixelRatio || 1;
-      const canvas = document.createElement("canvas");
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = w + "px";
-      canvas.style.height = h + "px";
-      const ctx = canvas.getContext("2d");
-      ctx.scale(dpr, dpr);
-      if (bordered) {
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = color;
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
-        }
-      }
-      ctx.fillStyle = color;
-      ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, w / 2, h / 2);
+      const { canvas, w, h } = paintCanvas(
+        ast,
+        renderRows(ast),
+        opts.color || "#000",
+      );
       const img = document.createElement("img");
       img.src = canvas.toDataURL("image/png");
       img.width = w;
@@ -237,20 +549,11 @@
   // {blob, mime, ext}. PNG is async because canvas.toBlob is callback-based.
   const exporters = {
     ascii(ast) {
-      const { label, bordered } = ast;
-      if (!bordered) {
-        return { text: label, mime: "text/plain", ext: "txt" };
-      }
-      const dw = displayWidth(label);
-      const pad = 3;
-      const line = "─".repeat(dw + pad * 2);
-      const sp = " ".repeat(pad);
-      const text = [
-        "┌" + line + "┐",
-        "│" + sp + label + sp + "│",
-        "└" + line + "┘",
-      ].join("\n");
-      return { text, mime: "text/plain", ext: "txt" };
+      return {
+        text: renderRows(ast).join("\n"),
+        mime: "text/plain",
+        ext: "txt",
+      };
     },
 
     svg(ast) {
@@ -262,33 +565,11 @@
     },
 
     async png(ast, opts = {}) {
-      const { label, bordered } = ast;
-      const color = opts.color || "#000";
-      const dw = displayWidth(label);
-      const w = dw * 10 + 32;
-      const h = 48;
-      const dpr = window.devicePixelRatio || 1;
-      const canvas = document.createElement("canvas");
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(dpr, dpr);
-      if (bordered) {
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = color;
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
-        }
-      }
-      ctx.fillStyle = color;
-      ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, w / 2, h / 2);
+      const { canvas } = paintCanvas(
+        ast,
+        renderRows(ast),
+        opts.color || "#000",
+      );
       const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
       return { blob, mime: "image/png", ext: "png" };
     },
@@ -366,9 +647,23 @@
       this._editor = editor;
       this.append(editor);
 
-      // Right pane: toolbar + rendered output.
+      // Right pane: guide + toolbar + rendered output.
       const right = document.createElement("div");
       right.className = "pylon-right";
+
+      // Compact reference so users don't have to leave the pane to
+      // recall the frontmatter keys and alignment syntax.
+      const guide = document.createElement("div");
+      guide.className = "pylon-guide";
+      guide.innerHTML =
+        '<div><span class="pylon-guide-key">size:</span> <code>WxH</code>' +
+        '<span class="pylon-guide-sep">·</span>' +
+        '<span class="pylon-guide-key">theme:</span> <code>simple | ascii | dark | light</code></div>' +
+        '<div><span class="pylon-guide-key">align:</span> <code>[- x -]</code> center' +
+        '<span class="pylon-guide-sep">·</span>' +
+        "<code>[- x&nbsp;&nbsp;]</code> right" +
+        '<span class="pylon-guide-sep">·</span>' +
+        "<code>[&nbsp;&nbsp;x -]</code> left</div>";
 
       const toolbar = document.createElement("div");
       toolbar.className = "pylon-toolbar";
@@ -401,7 +696,7 @@
       this._viewHost = document.createElement("div");
       this._viewHost.className = "pylon-view";
 
-      right.append(toolbar, this._viewHost);
+      right.append(guide, toolbar, this._viewHost);
       this.append(right);
     }
 
@@ -409,6 +704,12 @@
       if (!this._viewHost) return;
       const renderer = renderers[this._currentFormat()] ?? renderers.ascii;
       const ast = parse(this._source);
+      const theme = ast.meta?.theme;
+      if (theme) {
+        this.dataset.theme = theme;
+      } else {
+        delete this.dataset.theme;
+      }
       const color = getComputedStyle(this._viewHost).color;
       this._viewHost.innerHTML = "";
       this._viewHost.append(renderer(ast, { color }));
