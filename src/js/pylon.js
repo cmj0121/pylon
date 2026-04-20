@@ -107,6 +107,58 @@
   // alignment between nodes is not a DSL feature.
   const EDGE_RE = /^<?-+>?/;
 
+  // Post-pass over a line's items to stitch a labelled-edge pattern:
+  //
+  //   [ A ] -- ( friend ) --> [ B ]
+  //         ^^^^^^^^^^^^^^^^^^^^^^ three tokens merged into one edge
+  //
+  // The pattern is (dashes-only-text OR edge) + borderless-node + (dashes-only-text OR edge).
+  // At least one of the outer pieces must be an arrow-bearing edge,
+  // otherwise there is no direction (just dashes around a label is
+  // ambiguous and we leave it as text).
+  const DASH_ONLY_RE = /^-+$/;
+  const stitchLabeledEdges = (items) => {
+    const out = [];
+    let i = 0;
+    const isDashes = (x) =>
+      x && x.type === "text" && DASH_ONLY_RE.test(x.content);
+    const isEdge = (x) => x && x.type === "edge";
+    const isBorderlessBox = (x) =>
+      x && x.type === "box" && x.bordered === false;
+    while (i < items.length) {
+      const a = items[i];
+      const b = items[i + 1];
+      const c = items[i + 2];
+      if (
+        (isDashes(a) || isEdge(a)) &&
+        isBorderlessBox(b) &&
+        (isDashes(c) || isEdge(c)) &&
+        (isEdge(a) || isEdge(c))
+      ) {
+        const hasL =
+          isEdge(a) && (a.direction === "left" || a.direction === "both");
+        const hasR =
+          isEdge(c) && (c.direction === "right" || c.direction === "both");
+        const direction = hasL && hasR ? "both" : hasL ? "left" : "right";
+        const leftLen = a.type === "text" ? a.content.length : a.length;
+        const rightLen = c.type === "text" ? c.content.length : c.length;
+        out.push({
+          type: "edge",
+          direction,
+          length: leftLen + rightLen,
+          leftLen,
+          rightLen,
+          label: b,
+        });
+        i += 3;
+        continue;
+      }
+      out.push(a);
+      i++;
+    }
+    return out;
+  };
+
   // Split the inner content of a box into an ordered list of items.
   // Items are child nodes, text runs, edge tokens, or -- when a source
   // line contains at least one edge and two or more other items -- a
@@ -126,15 +178,14 @@
     const flushLine = () => {
       flushText();
       if (lineItems.length === 0) return;
+      lineItems = stitchLabeledEdges(lineItems);
       const hasEdge = lineItems.some((it) => it.type === "edge");
-      if (hasEdge && lineItems.length >= 2) {
+      if (hasEdge) {
         items.push({ type: "row", items: lineItems });
       } else {
         // No edge on this line -- flatten items into the parent stack
-        // so existing behaviour is preserved for plain text and stacks.
-        for (const it of lineItems) {
-          if (it.type !== "edge") items.push(it);
-        }
+        // so existing vertical-stack behaviour is preserved.
+        for (const it of lineItems) items.push(it);
       }
       lineItems = [];
     };
@@ -385,13 +436,24 @@
 
   // Format the text form of an edge token. Edges render at a fixed
   // length regardless of how many dashes the author typed, so '->',
-  // '-->', and '--->' all produce the same arrow.
+  // '-->', and '--->' all produce the same arrow. Labelled edges use
+  // two dashes on each side of the label so it breathes against the
+  // adjacent box borders; unlabelled edges use a single dash plus the
+  // arrow head.
   const SIMPLE_EDGE_DASHES = 1;
+  const LABELED_EDGE_DASHES = 2;
   const edgeString = (edge, bc) => {
     const head = edge.direction === "right" || edge.direction === "both";
     const tail = edge.direction === "left" || edge.direction === "both";
     const leftArrow = tail ? bc.arrowL : "";
     const rightArrow = head ? bc.arrowR : "";
+    if (edge.label) {
+      const labelRows = renderBoxRows(edge.label, bc);
+      const labelText = labelRows[0] ?? "";
+      const dashes = bc.h.repeat(LABELED_EDGE_DASHES);
+      const pad = "  "; // two spaces on each side so the label breathes
+      return leftArrow + dashes + pad + labelText + pad + dashes + rightArrow;
+    }
     return leftArrow + bc.h.repeat(SIMPLE_EDGE_DASHES) + rightArrow;
   };
 
