@@ -338,7 +338,7 @@
   //     springs on the wrapper have visible space to push the stack).
   // Single-item borderless wrappers stay transparent: (World) prints
   // "World" and ([x]) prints the contents of [x] verbatim.
-  const renderBoxRows = (ast, bc, targetW, targetH) => {
+  const renderBoxRows = (ast, bc, { targetW, targetH } = {}) => {
     const { items = [], align = "center", bordered } = ast;
 
     const itemRows = items.flatMap((it) => renderItemRows(it, bc));
@@ -378,13 +378,63 @@
   const renderRows = (ast) => {
     const bc = boxChars(ast);
     const size = ast.meta?.size;
-    const targetW = size?.w;
-    const targetH = size?.h;
-    if (size && ast.bordered === false) {
-      // Borderless root with forced size: still pad to size.
-      return renderBoxRows(ast, bc, targetW, targetH);
+    return renderBoxRows(ast, bc, { targetW: size?.w, targetH: size?.h });
+  };
+
+  // Shared helpers for the SVG / PNG backends. Each row becomes one line
+  // of paint; when the root has a real vector border we skip the outer
+  // glyphs (rows[0] and rows[-1]) and strip the side glyphs so the text
+  // is not doubled over the vector rect.
+  const maxRowWidth = (rows) =>
+    rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+
+  const paintableBody = (ast, row) => (ast.bordered ? row.slice(1, -1) : row);
+
+  const paintableRange = (ast, rows) => ({
+    first: ast.bordered ? 1 : 0,
+    last: ast.bordered ? rows.length - 1 : rows.length,
+  });
+
+  const FONT_STACK_MONO = "ui-monospace, Menlo, Consolas, monospace";
+  const FONT_SIZE_PX = CELL_PX_H * 0.7;
+
+  const drawCanvasBorder = (ctx, w, h, color) => {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = color;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
     }
-    return renderBoxRows(ast, bc, targetW, targetH);
+  };
+
+  // Build a canvas that paints the rows. Shared by the display renderer
+  // (wraps the canvas in an <img>) and the PNG exporter (converts it to
+  // a Blob).
+  const paintCanvas = (ast, rows, color) => {
+    const w = maxRowWidth(rows) * CELL_PX_W;
+    const h = rows.length * CELL_PX_H;
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    if (ast.bordered) drawCanvasBorder(ctx, w, h, color);
+    ctx.fillStyle = color;
+    ctx.font = `${FONT_SIZE_PX}px ${FONT_STACK_MONO}`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    const range = paintableRange(ast, rows);
+    const x = ast.bordered ? CELL_PX_W : 0;
+    for (let i = range.first; i < range.last; i++) {
+      ctx.fillText(paintableBody(ast, rows[i]), x, (i + 0.5) * CELL_PX_H);
+    }
+    return { canvas, w, h };
   };
 
   // ---- themes -----------------------------------------------------------
@@ -438,8 +488,7 @@
 
     svg(ast) {
       const rows = renderRows(ast);
-      const rowW = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
-      const w = rowW * CELL_PX_W;
+      const w = maxRowWidth(rows) * CELL_PX_W;
       const h = rows.length * CELL_PX_H;
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg");
@@ -447,8 +496,8 @@
       svg.setAttribute("height", h);
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.classList.add("pylon-svg");
-      // Root border as a real vector rect when the outermost box is
-      // bordered -- nested inner boxes are drawn as text glyphs inside.
+      // Root border as a real vector rect; nested inner borders are
+      // left as text glyphs in the rows.
       if (ast.bordered) {
         const rect = document.createElementNS(ns, "rect");
         rect.setAttribute("x", 1);
@@ -461,68 +510,30 @@
         rect.setAttribute("stroke-width", "1");
         svg.append(rect);
       }
-      // Draw text rows. When the root is bordered we skip rendering the
-      // outer border glyphs (rows[0] and rows[-1]) so the vector rect
-      // isn't duplicated by text. Inner rows still carry any nested-box
-      // glyphs, which render as text.
-      const firstRow = ast.bordered ? 1 : 0;
-      const lastRow = ast.bordered ? rows.length - 1 : rows.length;
-      for (let i = firstRow; i < lastRow; i++) {
-        const body = ast.bordered ? rows[i].slice(1, -1) : rows[i];
+      const range = paintableRange(ast, rows);
+      const x = ast.bordered ? CELL_PX_W : 0;
+      for (let i = range.first; i < range.last; i++) {
         const t = document.createElementNS(ns, "text");
-        t.setAttribute("x", ast.bordered ? CELL_PX_W : 0);
+        t.setAttribute("x", x);
         t.setAttribute("y", (i + 0.5) * CELL_PX_H);
         t.setAttribute("text-anchor", "start");
         t.setAttribute("dominant-baseline", "middle");
         t.setAttribute("font-family", "monospace");
-        t.setAttribute("font-size", CELL_PX_H * 0.7);
+        t.setAttribute("font-size", FONT_SIZE_PX);
         t.setAttribute("xml:space", "preserve");
         t.setAttribute("fill", "currentColor");
-        t.textContent = body;
+        t.textContent = paintableBody(ast, rows[i]);
         svg.append(t);
       }
       return svg;
     },
 
     png(ast, opts = {}) {
-      const color = opts.color || "#000";
-      const rows = renderRows(ast);
-      const rowW = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
-      const w = rowW * CELL_PX_W;
-      const h = rows.length * CELL_PX_H;
-      const dpr = window.devicePixelRatio || 1;
-      const canvas = document.createElement("canvas");
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = w + "px";
-      canvas.style.height = h + "px";
-      const ctx = canvas.getContext("2d");
-      ctx.scale(dpr, dpr);
-      if (ast.bordered) {
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = color;
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
-        }
-      }
-      ctx.fillStyle = color;
-      ctx.font = `${
-        CELL_PX_H * 0.7
-      }px ui-monospace, Menlo, Consolas, monospace`;
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "left";
-      const firstRow = ast.bordered ? 1 : 0;
-      const lastRow = ast.bordered ? rows.length - 1 : rows.length;
-      for (let i = firstRow; i < lastRow; i++) {
-        const body = ast.bordered ? rows[i].slice(1, -1) : rows[i];
-        const x = ast.bordered ? CELL_PX_W : 0;
-        const y = (i + 0.5) * CELL_PX_H;
-        ctx.fillText(body, x, y);
-      }
+      const { canvas, w, h } = paintCanvas(
+        ast,
+        renderRows(ast),
+        opts.color || "#000",
+      );
       const img = document.createElement("img");
       img.src = canvas.toDataURL("image/png");
       img.width = w;
@@ -554,42 +565,11 @@
     },
 
     async png(ast, opts = {}) {
-      const color = opts.color || "#000";
-      const rows = renderRows(ast);
-      const rowW = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
-      const w = rowW * CELL_PX_W;
-      const h = rows.length * CELL_PX_H;
-      const dpr = window.devicePixelRatio || 1;
-      const canvas = document.createElement("canvas");
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(dpr, dpr);
-      if (ast.bordered) {
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = color;
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
-        }
-      }
-      ctx.fillStyle = color;
-      ctx.font = `${
-        CELL_PX_H * 0.7
-      }px ui-monospace, Menlo, Consolas, monospace`;
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "left";
-      const firstRow = ast.bordered ? 1 : 0;
-      const lastRow = ast.bordered ? rows.length - 1 : rows.length;
-      for (let i = firstRow; i < lastRow; i++) {
-        const body = ast.bordered ? rows[i].slice(1, -1) : rows[i];
-        const x = ast.bordered ? CELL_PX_W : 0;
-        const y = (i + 0.5) * CELL_PX_H;
-        ctx.fillText(body, x, y);
-      }
+      const { canvas } = paintCanvas(
+        ast,
+        renderRows(ast),
+        opts.color || "#000",
+      );
       const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
       return { blob, mime: "image/png", ext: "png" };
     },
