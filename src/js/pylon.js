@@ -1,4 +1,4 @@
-// Pylon -- tiny custom-element scaffold
+// Pylon -- tiny WYSIWYG scaffold
 //
 // Registers a <pylon-chart> custom element. Renders its source
 // (textContent or the `src` attribute) in one of three backends:
@@ -10,15 +10,17 @@
 // (The HTML spec requires custom element names to contain a hyphen,
 // hence `pylon-chart` rather than `pylon`.)
 //
+// Add the `wysiwyg` attribute to turn the element into a split-pane
+// editor: plaintext textarea on the left, rendered output on the right
+// with a format dropdown (ASCII / SVG / PNG). The dropdown overrides
+// the `format` attribute until the attribute is changed again.
+//
 // The parser is a stub for now: the source text becomes the single
 // label on a drawn box. Wire in the real parser once the grammar is
 // settled.
 
 (() => {
   // ---- stub parser ------------------------------------------------------
-  // Replace with the real Pylon parser later. For now, any input becomes
-  // a single-box AST whose label is the trimmed source (or "Hello, World!"
-  // when the source is empty).
   const parse = (source) => {
     const label = (source ?? "").trim() || "Hello, World!";
     return { type: "box", label };
@@ -70,8 +72,6 @@
 
     png(ast, opts = {}) {
       const label = ast.label;
-      // Canvas 2D does not understand the "currentColor" keyword, so the
-      // caller resolves the computed color and passes it in.
       const color = opts.color || "#000";
       const w = label.length * 10 + 24;
       const h = 44;
@@ -101,15 +101,20 @@
   };
 
   // ---- custom element ---------------------------------------------------
+  const FORMATS = ["ascii", "svg", "png"];
+
   class PylonElement extends HTMLElement {
     static get observedAttributes() {
-      return ["format", "src"];
+      return ["format", "wysiwyg", "src"];
     }
 
     constructor() {
       super();
       this._source = "";
+      this._format = null; // dropdown override; null means fall back to attribute
       this._viewHost = null;
+      this._editor = null;
+      this._formatSelect = null;
     }
 
     connectedCallback() {
@@ -122,23 +127,85 @@
       if (name === "src") {
         this._source = this.getAttribute("src") ?? "";
       }
+      if (name === "format") {
+        // Author-driven format change clears any dropdown override.
+        this._format = null;
+      }
       this._mount();
+    }
+
+    _currentFormat() {
+      const attr = (this.getAttribute("format") ?? "ascii").toLowerCase();
+      const fmt = this._format ?? attr;
+      return FORMATS.includes(fmt) ? fmt : "ascii";
     }
 
     _mount() {
       this.innerHTML = "";
+      if (this.hasAttribute("wysiwyg")) {
+        this._mountWysiwyg();
+      } else {
+        this._mountView();
+      }
+      this._render();
+    }
+
+    _mountView() {
       this._viewHost = document.createElement("div");
       this._viewHost.className = "pylon-view";
       this.append(this._viewHost);
-      this._render();
+      this._editor = null;
+      this._formatSelect = null;
+    }
+
+    _mountWysiwyg() {
+      // Left pane: plaintext editor.
+      const editor = document.createElement("textarea");
+      editor.className = "pylon-editor";
+      editor.value = this._source;
+      editor.rows = Math.max(6, this._source.split("\n").length + 1);
+      editor.addEventListener("input", () => {
+        this._source = editor.value;
+        this._render();
+      });
+      this._editor = editor;
+      this.append(editor);
+
+      // Right pane: toolbar + rendered output.
+      const right = document.createElement("div");
+      right.className = "pylon-right";
+
+      const toolbar = document.createElement("div");
+      toolbar.className = "pylon-toolbar";
+
+      const select = document.createElement("select");
+      select.className = "pylon-format-select";
+      const current = this._currentFormat();
+      for (const fmt of FORMATS) {
+        const opt = document.createElement("option");
+        opt.value = fmt;
+        opt.textContent = fmt.toUpperCase();
+        if (fmt === current) opt.selected = true;
+        select.append(opt);
+      }
+      select.addEventListener("change", () => {
+        this._format = select.value;
+        this._render();
+      });
+      this._formatSelect = select;
+      toolbar.append(select);
+
+      this._viewHost = document.createElement("div");
+      this._viewHost.className = "pylon-view";
+
+      right.append(toolbar, this._viewHost);
+      this.append(right);
     }
 
     _render() {
       if (!this._viewHost) return;
-      const format = (this.getAttribute("format") ?? "ascii").toLowerCase();
-      const renderer = renderers[format] ?? renderers.ascii;
+      const renderer = renderers[this._currentFormat()] ?? renderers.ascii;
       const ast = parse(this._source);
-      // Resolve currentColor so canvas-based renderers (PNG) can use it.
       const color = getComputedStyle(this._viewHost).color;
       this._viewHost.innerHTML = "";
       this._viewHost.append(renderer(ast, { color }));

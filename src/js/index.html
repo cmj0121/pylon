@@ -2,41 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Pylon -- demo</title>
+    <title>Pylon</title>
     <script src="./pylon.js"></script>
     <style>
       body {
         font-family: system-ui, sans-serif;
         margin: 2rem;
-        max-width: 720px;
+        max-width: 960px;
         color: #222;
-      }
-      section {
-        margin-bottom: 2rem;
-      }
-      h2 {
-        margin: 0 0 0.5rem 0;
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: #555;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
       }
     </style>
   </head>
   <body>
-    <h1>Pylon</h1>
-    <section>
-      <h2>ASCII (default)</h2>
-      <pylon-chart>Hello, World!</pylon-chart>
-    </section>
-    <section>
-      <h2>SVG</h2>
-      <pylon-chart format="svg">Hello, World!</pylon-chart>
-    </section>
-    <section>
-      <h2>PNG</h2>
-      <pylon-chart format="png">Hello, World!</pylon-chart>
-    </section>
+    <pylon-chart wysiwyg></pylon-chart>
   </body>
 </html>
