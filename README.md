@@ -129,6 +129,36 @@ This example show a simple flow chart with three nodes and two edges.
     └───────────┘     └─────────┘     └─────┘
 ```
 
+## Web UI
+
+A zero-dependency JavaScript scaffold lives under [`src/js/`](src/js/). It registers a `<pylon-chart>` custom element
+that renders a Pylon source string as **ASCII**, **SVG**, or **PNG**, and an optional `wysiwyg` attribute turns the
+element into a split-pane editor with a live preview and Copy / Download buttons for the current format.
+
+### Run the demo
+
+```sh
+make -C src/js run            # serves src/js/ on http://localhost:3333
+```
+
+Or open `src/js/index.html` directly in a browser.
+
+### Embed
+
+```html
+<link rel="stylesheet" href="pylon.css" />
+<script src="pylon.js"></script>
+
+<!-- View-only -->
+<pylon-chart format="svg">[- Hello -]</pylon-chart>
+
+<!-- Split editor + preview, dropdown switches format -->
+<pylon-chart wysiwyg></pylon-chart>
+```
+
+Attributes: `format="ascii|svg|png"` (default `ascii`), `src` (source, alternative to child text), `wysiwyg` (flag).
+All colors, spacing, fonts, and shape are themeable via `--pylon-*` custom properties in `pylon.css`.
+
 ## DDD (Dream-Driven Development)
 
 This project follows the DDD (Dream-Driven Development) methodology, which means the project
