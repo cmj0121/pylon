@@ -465,86 +465,102 @@
   // height; edges are placed on the midline row and blank strings on
   // the others.
   //
-  // When `maxW` is given (only happens when the containing box has
-  // an explicit meta.size.w), items that don't fit into the current
-  // chunk start a new chunk. Chunks stack vertically, so a long
-  // '[A]->[B]->[C]->[D]' wraps to
+  // When `maxW` is given (the containing box has an explicit
+  // meta.size.w) AND the horizontal layout would overflow, the row
+  // rotates 90° -- nodes stack vertically, edges become down / up
+  // arrows centered over the widest node's column. A long
+  // '[A]->[B]->[C]->[D]' becomes
   //
-  //   [A]->[B]->
-  //   [C]->[D]
+  //   [A]
+  //    ▼
+  //   [B]
+  //    ▼
+  //   [C]
+  //    ▼
+  //   [D]
   //
-  // at item boundaries. Trailing edges at a wrap are dropped (they
-  // would point to nothing) and the new chunk never starts with an
-  // edge; the continuation is implied by stacking.
+  // instead of being clipped to fit the frame. Labelled edges keep
+  // their label inline on its own row next to the arrow.
   const renderRowRows = (row, bc, maxW) => {
     const parts = row.items.map((it) => {
       if (it.type === "edge") {
         const text = edgeString(it, bc);
-        return { kind: "edge", text, width: displayWidth(text) };
+        return { kind: "edge", edge: it, text, width: displayWidth(text) };
       }
       const rows = renderItemRows(it, bc);
       const width = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
       return { kind: "block", rows, width };
     });
 
-    // Group parts into chunks that each fit within maxW.
-    const chunks = [[]];
-    let curW = 0;
-    let justWrapped = false;
-    for (const p of parts) {
-      const current = chunks[chunks.length - 1];
-      if (maxW !== undefined && current.length > 0 && curW + p.width > maxW) {
-        // Drop any trailing edges from the chunk we're about to close.
-        while (
-          current.length > 0 &&
-          current[current.length - 1].kind === "edge"
-        ) {
-          curW -= current.pop().width;
-        }
-        chunks.push([]);
-        curW = 0;
-        justWrapped = true;
-      }
-      if (justWrapped && p.kind === "edge") continue; // skip leading edge
-      chunks[chunks.length - 1].push(p);
-      curW += p.width;
-      justWrapped = false;
+    const totalWidth = parts.reduce((sum, p) => sum + p.width, 0);
+    if (maxW !== undefined && totalWidth > maxW) {
+      return renderVerticalChain(parts, bc);
     }
 
-    const renderChunk = (chunk) => {
-      const h = chunk.reduce(
-        (m, p) => (p.kind === "block" ? Math.max(m, p.rows.length) : m),
-        1,
-      );
-      const midline = Math.floor((h - 1) / 2);
-      const columns = chunk.map((p) => {
-        if (p.kind === "edge") {
-          const blank = " ".repeat(p.width);
-          return Array.from({ length: h }, (_, r) =>
-            r === midline ? p.text : blank,
-          );
-        }
+    const h = parts.reduce(
+      (m, p) => (p.kind === "block" ? Math.max(m, p.rows.length) : m),
+      1,
+    );
+    const midline = Math.floor((h - 1) / 2);
+    const columns = parts.map((p) => {
+      if (p.kind === "edge") {
         const blank = " ".repeat(p.width);
-        const padded = p.rows.map((r) => padRow(r, p.width, "left"));
-        const extra = h - padded.length;
-        const top = Math.floor(extra / 2);
-        const bot = extra - top;
-        return [
-          ...new Array(top).fill(blank),
-          ...padded,
-          ...new Array(bot).fill(blank),
-        ];
-      });
-      const out = [];
-      for (let r = 0; r < h; r++) {
-        let line = "";
-        for (const col of columns) line += col[r];
-        out.push(line);
+        return Array.from({ length: h }, (_, r) =>
+          r === midline ? p.text : blank,
+        );
       }
-      return out;
-    };
+      const blank = " ".repeat(p.width);
+      const padded = p.rows.map((r) => padRow(r, p.width, "left"));
+      const extra = h - padded.length;
+      const top = Math.floor(extra / 2);
+      const bot = extra - top;
+      return [
+        ...new Array(top).fill(blank),
+        ...padded,
+        ...new Array(bot).fill(blank),
+      ];
+    });
+    const out = [];
+    for (let r = 0; r < h; r++) {
+      let line = "";
+      for (const col of columns) line += col[r];
+      out.push(line);
+    }
+    return out;
+  };
 
-    return chunks.filter((c) => c.length > 0).flatMap(renderChunk);
+  // Vertical-chain fallback for overflowing rows. Each node's own
+  // rows are centered within the widest node's column; each edge
+  // turns into a 1-or-3-row run carrying a down / up / both arrow
+  // and, when present, the edge label.
+  const renderVerticalChain = (parts, bc) => {
+    const blocks = parts.filter((p) => p.kind === "block");
+    if (blocks.length === 0) return [];
+    const maxW = blocks.reduce((m, p) => Math.max(m, p.width), 1);
+    const result = [];
+    for (const p of parts) {
+      if (p.kind === "block") {
+        for (const r of p.rows) result.push(padRow(r, maxW, "center"));
+        continue;
+      }
+      const { direction, label } = p.edge;
+      const down = direction === "right" || direction === "both";
+      const up = direction === "left" || direction === "both";
+      if (label) {
+        // Sandwich the label with one arrow per active direction:
+        // bidirectional gets ▲ above and ▼ below, one-way edges get
+        // a single arrow on the direction-of-travel side.
+        const labelRows = renderBoxRows(label, bc);
+        const labelText = labelRows[0] ?? "";
+        if (up) result.push(padRow("▲", maxW, "center"));
+        result.push(padRow(labelText, maxW, "center"));
+        if (down) result.push(padRow("▼", maxW, "center"));
+      } else {
+        const arrow = up && down ? "↕" : down ? "▼" : "▲";
+        result.push(padRow(arrow, maxW, "center"));
+      }
+    }
+    return result;
   };
 
   // Render a box AST to a flat array of rows. When targetW / targetH are
