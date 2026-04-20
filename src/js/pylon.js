@@ -88,17 +88,57 @@
     return { align, clean };
   };
 
+  // Flow-edge tokens recognised between sibling nodes on the same line:
+  //
+  //   ->         length=1 right
+  //   <-         length=1 left
+  //   <->        length=1 bidirectional
+  //   -->        length=2 right
+  //   <-->       length=2 bidirectional  (arrow on both sides)
+  //   --->       length=3 right
+  //   ...and so on. The general form is <?-+>? with at least one arrow.
+  //   Pure dashes with no arrow head stay as literal text (the labelled
+  //   edge form '-- ( label ) -->' lands in a later commit).
+  //
+  // Note on '-': inside brackets flush with the wall (e.g. '[- x -]') a
+  // lone dash is an alignment spring (unchanged). Between siblings on a
+  // line, '-' is an edge-line fragment and never aligns. The older
+  // README hint of "'-' defines alignment between nodes" is dropped --
+  // alignment between nodes is not a DSL feature.
+  const EDGE_RE = /^<?-+>?/;
+
   // Split the inner content of a box into an ordered list of items.
-  // Items are either child nodes or text runs; newlines break text into
-  // separate items so multi-line content stacks vertically.
+  // Items are child nodes, text runs, edge tokens, or -- when a source
+  // line contains at least one edge and two or more other items -- a
+  // row wrapper that groups the line's items for horizontal layout.
+  // Newlines separate items vertically.
   const parseItems = (s) => {
     const items = [];
+    let lineItems = [];
     let textBuf = "";
+
     const flushText = () => {
       const t = textBuf.trim();
-      if (t) items.push({ type: "text", content: t });
+      if (t) lineItems.push({ type: "text", content: t });
       textBuf = "";
     };
+
+    const flushLine = () => {
+      flushText();
+      if (lineItems.length === 0) return;
+      const hasEdge = lineItems.some((it) => it.type === "edge");
+      if (hasEdge && lineItems.length >= 2) {
+        items.push({ type: "row", items: lineItems });
+      } else {
+        // No edge on this line -- flatten items into the parent stack
+        // so existing behaviour is preserved for plain text and stacks.
+        for (const it of lineItems) {
+          if (it.type !== "edge") items.push(it);
+        }
+      }
+      lineItems = [];
+    };
+
     let i = 0;
     while (i < s.length) {
       const c = s[i];
@@ -106,22 +146,41 @@
         flushText();
         const end = findMatching(s, i);
         if (end < 0) {
-          // Unmatched: swallow as literal text so parsing stays lenient.
           textBuf += c;
           i++;
           continue;
         }
-        items.push(parseBracketedNode(s.slice(i, end + 1)));
+        lineItems.push(parseBracketedNode(s.slice(i, end + 1)));
         i = end + 1;
       } else if (c === "\n") {
-        flushText();
+        flushLine();
+        i++;
+      } else if (c === "<" || c === "-") {
+        const match = s.slice(i).match(EDGE_RE);
+        const token = match ? match[0] : "";
+        const hasLeft = token.startsWith("<");
+        const hasRight = token.endsWith(">");
+        if (token && (hasLeft || hasRight)) {
+          flushText();
+          const dashes = token.length - (hasLeft ? 1 : 0) - (hasRight ? 1 : 0);
+          const direction =
+            hasLeft && hasRight ? "both" : hasRight ? "right" : "left";
+          lineItems.push({
+            type: "edge",
+            direction,
+            length: Math.max(1, dashes),
+          });
+          i += token.length;
+          continue;
+        }
+        textBuf += c;
         i++;
       } else {
         textBuf += c;
         i++;
       }
     }
-    flushText();
+    flushLine();
     return items;
   };
 
@@ -170,25 +229,19 @@
     //
     // parses as two top-level items. When the user writes exactly one
     // bracketed node we use it directly so SVG / PNG can paint a real
-    // vector rect; when they write more than one we wrap in the
-    // implicit borderless root.
+    // vector rect; for anything else (bare text, a row of chained
+    // nodes, or multiple items) we wrap in the implicit root. Bare
+    // single text gets a bordered wrap for the legacy "type some text
+    // and get a box" behaviour; everything else is borderless.
     const items = parseItems(body);
     let root;
     if (items.length === 1 && items[0].type === "box") {
       root = items[0];
-    } else if (items.length === 1) {
-      // Single bare text run: keep the legacy implicit-bordered wrap
-      // so bare labels still render with a box.
-      root = {
-        type: "box",
-        bordered: true,
-        align: "center",
-        items,
-      };
     } else {
+      const bareText = items.length === 1 && items[0].type === "text";
       root = {
         type: "box",
-        bordered: false,
+        bordered: bareText,
         align: "center",
         items,
       };
@@ -321,11 +374,71 @@
     ];
   };
 
-  // Render an item (text or box) to its natural rows.
+  // Render an item to its natural rows. Rows (horizontal chains) and
+  // edges are lowered inside renderRowRows; they do not appear standalone.
   const renderItemRows = (item, bc) => {
     if (item.type === "text") return [item.content];
     if (item.type === "box") return renderBoxRows(item, bc);
+    if (item.type === "row") return renderRowRows(item, bc);
     return [];
+  };
+
+  // Format the text form of an edge token. Edges render at a fixed
+  // length regardless of how many dashes the author typed, so '->',
+  // '-->', and '--->' all produce the same arrow.
+  const SIMPLE_EDGE_DASHES = 1;
+  const edgeString = (edge, bc) => {
+    const head = edge.direction === "right" || edge.direction === "both";
+    const tail = edge.direction === "left" || edge.direction === "both";
+    const leftArrow = tail ? bc.arrowL : "";
+    const rightArrow = head ? bc.arrowR : "";
+    return leftArrow + bc.h.repeat(SIMPLE_EDGE_DASHES) + rightArrow;
+  };
+
+  // Render a row (horizontal chain of node / edge items) to display
+  // rows. Node items render to their own rows; shorter nodes get
+  // blank-row padding so every column is the same height; edges are
+  // placed on the midline row and blank strings on the others.
+  const renderRowRows = (row, bc) => {
+    const blocks = row.items.map((it) =>
+      it.type === "edge"
+        ? { edge: it, text: edgeString(it, bc) }
+        : { rows: renderItemRows(it, bc) },
+    );
+    const maxH = blocks.reduce(
+      (m, b) => (b.rows ? Math.max(m, b.rows.length) : m),
+      1,
+    );
+    const midline = Math.floor((maxH - 1) / 2);
+
+    const columns = blocks.map((b) => {
+      if (b.edge) {
+        const blank = " ".repeat(displayWidth(b.text));
+        return Array.from({ length: maxH }, (_, r) =>
+          r === midline ? b.text : blank,
+        );
+      }
+      const rows = b.rows;
+      const width = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+      const blank = " ".repeat(width);
+      const padded = rows.map((r) => padRow(r, width, "left"));
+      const extra = maxH - padded.length;
+      const top = Math.floor(extra / 2);
+      const bot = extra - top;
+      return [
+        ...new Array(top).fill(blank),
+        ...padded,
+        ...new Array(bot).fill(blank),
+      ];
+    });
+
+    const result = [];
+    for (let r = 0; r < maxH; r++) {
+      let line = "";
+      for (const col of columns) line += col[r];
+      result.push(line);
+    }
+    return result;
   };
 
   // Render a box AST to a flat array of rows. When targetW / targetH are
@@ -451,8 +564,23 @@
     br: "┘",
     h: "─",
     v: "│",
+    // Filled triangle arrowheads (U+25C0 / U+25B6). Bold, immediately
+    // readable as arrows; render with a small gap before the '│'
+    // border of the next node in some fonts, which the project
+    // accepts as a style trade-off.
+    arrowL: "◀",
+    arrowR: "▶",
   };
-  const ASCII_BOX = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|" };
+  const ASCII_BOX = {
+    tl: "+",
+    tr: "+",
+    bl: "+",
+    br: "+",
+    h: "-",
+    v: "|",
+    arrowL: "<",
+    arrowR: ">",
+  };
   const boxChars = (ast) =>
     ast.meta?.theme === "ascii" ? ASCII_BOX : UNICODE_BOX;
 
@@ -520,6 +648,12 @@
         t.setAttribute("dominant-baseline", "middle");
         t.setAttribute("font-family", "monospace");
         t.setAttribute("font-size", FONT_SIZE_PX);
+        // SVG2 deprecates xml:space; modern browsers look at the CSS
+        // white-space property to keep runs of spaces from collapsing.
+        // Without this, rows that differ in leading-whitespace (e.g.
+        // "(a) -> [b]" where row 0 is padding+box and row 1 starts
+        // with the label) slide left and the box borders misalign.
+        t.setAttribute("style", "white-space: pre");
         t.setAttribute("xml:space", "preserve");
         t.setAttribute("fill", "currentColor");
         t.textContent = paintableBody(ast, rows[i]);
