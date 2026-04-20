@@ -546,19 +546,19 @@
       const { direction, label } = p.edge;
       const down = direction === "right" || direction === "both";
       const up = direction === "left" || direction === "both";
+      // Top row carries the arrow head for an upward edge, otherwise
+      // a '│' continuing the line down from the previous node. Bottom
+      // row mirrors that for a downward edge. When both sides have
+      // an arrow (bidirectional) the line collapses.
+      const topCh = up ? "▲" : "│";
+      const botCh = down ? "▼" : "│";
+      result.push(padRow(topCh, maxW, "center"));
       if (label) {
-        // Sandwich the label with one arrow per active direction:
-        // bidirectional gets ▲ above and ▼ below, one-way edges get
-        // a single arrow on the direction-of-travel side.
         const labelRows = renderBoxRows(label, bc);
         const labelText = labelRows[0] ?? "";
-        if (up) result.push(padRow("▲", maxW, "center"));
         result.push(padRow(labelText, maxW, "center"));
-        if (down) result.push(padRow("▼", maxW, "center"));
-      } else {
-        const arrow = up && down ? "↕" : down ? "▼" : "▲";
-        result.push(padRow(arrow, maxW, "center"));
       }
+      result.push(padRow(botCh, maxW, "center"));
     }
     return result;
   };
