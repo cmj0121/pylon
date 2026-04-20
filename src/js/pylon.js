@@ -317,37 +317,51 @@
     }
   };
 
-  // Resolve `ref` nodes. Two paths:
+  // Resolve `ref` nodes. Three paths:
   //
-  //   1. Same-row self-loop: when a row contains the adjacent triple
-  //      `[decl :: name] <edge> &name`, the ref is tagged as a self-
-  //      loop anchored on the declaration. The row renderer draws a
-  //      U-shaped arc under the declaration and omits the edge + ref
-  //      from the linear layout.
+  //   1. Same-row arc: when the declaration lives in the *same* row
+  //      as the ref, the ref is tagged as `sameRowArc` and drawn as
+  //      a U-shaped arc beneath the row. The arms anchor on the
+  //      target box (arrow end) and the source box (the box that
+  //      precedes the ref's edge). When target === source the arc
+  //      collapses to the existing self-loop shape. The edge that
+  //      led into the ref is consumed.
   //
-  //   2. Inline text: any other ref (cross-row, no matching decl,
-  //      not adjacent to the decl's edge) resolves to the name as
-  //      plain text -- a textual pointer, not a new box.
+  //   2. Cross-row: the declaration is in a different top-level row.
+  //      Routed through the right-side gutter by overlayCrossRowGutter.
   //
-  // Unresolved references emit an error and render the literal
-  // `&name` so the broken pointer is visible.
-  const tagSelfLoopsOnRow = (row) => {
+  //   3. Inline text: no matching declaration, or another ref has
+  //      already claimed the target's gutter lane. Renders as the
+  //      name as plain text (or the literal `&name` on unresolved
+  //      with an error).
+  const tagSameRowArcs = (row) => {
     const items = row.items;
-    for (let i = 0; i + 2 < items.length; i++) {
-      const decl = items[i];
-      const edge = items[i + 1];
-      const ref = items[i + 2];
+    const boxByName = new Map();
+    for (const c of items) {
+      if (c?.type === "box" && c.name) boxByName.set(c.name, c);
+    }
+    for (let i = 0; i < items.length; i++) {
+      const ref = items[i];
+      if (!(ref?.type === "ref")) continue;
+      const target = boxByName.get(ref.name);
+      if (!target) continue;
+      // Source box = the box the ref's edge flows out of. Expect the
+      // pattern `[src] <edge> &ref` so the box sits two slots back.
+      let sourceBox = null;
       if (
-        decl?.type === "box" &&
-        decl.name &&
-        edge?.type === "edge" &&
-        ref?.type === "ref" &&
-        ref.name === decl.name
+        i >= 2 &&
+        items[i - 1]?.type === "edge" &&
+        items[i - 2]?.type === "box"
       ) {
-        ref.selfLoop = true;
-        ref.target = decl;
-        ref.edge = edge;
-        edge._consumedBySelfLoop = true;
+        sourceBox = items[i - 2];
+      } else if (i >= 1 && items[i - 1]?.type === "box") {
+        sourceBox = items[i - 1];
+      }
+      ref.sameRowArc = true;
+      ref.target = target;
+      ref.sourceBox = sourceBox || target;
+      if (i > 0 && items[i - 1]?.type === "edge") {
+        items[i - 1]._consumedBySameRowArc = true;
       }
     }
   };
@@ -370,7 +384,7 @@
   const markCrossRowRefs = (row, map, claimed) => {
     for (let i = 0; i < row.items.length; i++) {
       const ref = row.items[i];
-      if (!(ref && ref.type === "ref" && !ref.selfLoop)) continue;
+      if (!(ref && ref.type === "ref" && !ref.sameRowArc)) continue;
       if (!map.has(ref.name)) continue;
       const target = map.get(ref.name);
       if (claimed.has(target)) continue;
@@ -387,13 +401,13 @@
     if (!item || typeof item !== "object") return;
     if (!claimed) claimed = new Set();
     if (item.type === "row") {
-      tagSelfLoopsOnRow(item);
+      tagSameRowArcs(item);
       markCrossRowRefs(item, map, claimed);
     }
     if (Array.isArray(item.items)) {
       item.items = item.items.map((c) => {
         if (c && c.type === "ref") {
-          if (c.selfLoop || c.crossRow) return c;
+          if (c.sameRowArc || c.crossRow) return c;
           return resolveRefText(c, map, errors);
         }
         resolveRefs(c, map, errors, claimed);
@@ -652,13 +666,13 @@
   // instead of being clipped to fit the frame. Labelled edges keep
   // their label inline on its own row next to the arrow.
   const renderRowRows = (row, bc, maxW) => {
-    // Self-loop and cross-row refs (and the edges that led into them)
-    // render as arcs -- under the declaration for self-loops, in the
+    // Same-row and cross-row refs (and the edges that led into them)
+    // render as arcs -- beneath the row for same-row arcs, in the
     // right-side gutter for cross-row refs -- not inline.
     const linearItems = row.items.filter(
       (it) =>
-        !(it && it.type === "ref" && (it.selfLoop || it.crossRow)) &&
-        !it._consumedBySelfLoop &&
+        !(it && it.type === "ref" && (it.sameRowArc || it.crossRow)) &&
+        !it._consumedBySameRowArc &&
         !it._consumedByCrossRow,
     );
     const parts = linearItems.map((it) => {
@@ -712,30 +726,50 @@
       out.push(line);
     }
 
-    // Append U-loop rows under each self-loop's target box. Arms sit
-    // two cells inside the left and right edges of the target, so a
-    // 9-wide `[ a ]` box gets a loop spanning cols 2..6 of that block.
-    const selfLoops = row.items.filter(
-      (it) => it && it.type === "ref" && it.selfLoop,
+    // Append U-arc rows under each same-row ref. Self-loop (target ===
+    // source) keeps both arms inside the target box; multi-box arcs
+    // (target !== source) anchor one arm under each box's inner-right
+    // column so the arc spans between them. The arrow head marks the
+    // target side regardless of which box is left.
+    const arcs = row.items.filter(
+      (it) => it && it.type === "ref" && it.sameRowArc,
     );
-    if (selfLoops.length > 0 && totalWidth > 0) {
-      for (const ref of selfLoops) {
-        const idx = parts.findIndex(
+    if (arcs.length > 0 && totalWidth > 0) {
+      const colOf = (part) =>
+        parts.slice(0, parts.indexOf(part)).reduce((s, p) => s + p.width, 0);
+      for (const ref of arcs) {
+        const tgtPart = parts.find(
           (p) => p.kind === "block" && p.item === ref.target,
         );
-        if (idx < 0) continue;
-        const startCol = parts.slice(0, idx).reduce((s, p) => s + p.width, 0);
-        const boxW = parts[idx].width;
-        const armL = 2;
-        const armR = boxW - 3;
+        if (!tgtPart) continue;
+        const tgtStart = colOf(tgtPart);
+        const tgtW = tgtPart.width;
+        let armL, armR, tgtArm;
+        if (ref.sourceBox === ref.target) {
+          // Self-loop: two arms inside the single target box.
+          armL = tgtStart + 2;
+          armR = tgtStart + tgtW - 3;
+          tgtArm = armR;
+        } else {
+          const srcPart = parts.find(
+            (p) => p.kind === "block" && p.item === ref.sourceBox,
+          );
+          if (!srcPart) continue;
+          const srcStart = colOf(srcPart);
+          const tgtCol = tgtStart + tgtW - 3;
+          const srcCol = srcStart + srcPart.width - 3;
+          armL = Math.min(tgtCol, srcCol);
+          armR = Math.max(tgtCol, srcCol);
+          tgtArm = tgtCol;
+        }
         if (armR <= armL) continue;
         const row1 = new Array(totalWidth).fill(" ");
         const row2 = new Array(totalWidth).fill(" ");
-        row1[startCol + armL] = bc.v;
-        row1[startCol + armR] = "▲";
-        row2[startCol + armL] = bc.bl;
-        for (let c = armL + 1; c < armR; c++) row2[startCol + c] = bc.h;
-        row2[startCol + armR] = bc.br;
+        row1[armL] = tgtArm === armL ? "▲" : bc.v;
+        row1[armR] = tgtArm === armR ? "▲" : bc.v;
+        row2[armL] = bc.bl;
+        for (let c = armL + 1; c < armR; c++) row2[c] = bc.h;
+        row2[armR] = bc.br;
         out.push(row1.join(""));
         out.push(row2.join(""));
       }
@@ -912,8 +946,8 @@
       } else if (item.type === "row") {
         const linearItems = item.items.filter(
           (it) =>
-            !(it && it.type === "ref" && (it.selfLoop || it.crossRow)) &&
-            !it._consumedBySelfLoop &&
+            !(it && it.type === "ref" && (it.sameRowArc || it.crossRow)) &&
+            !it._consumedBySameRowArc &&
             !it._consumedByCrossRow,
         );
         const parts = linearItems.map((it) => {
