@@ -150,7 +150,6 @@
         out.push({
           type: "edge",
           direction,
-          length: leftLen + rightLen,
           leftLen,
           rightLen,
           label: b,
@@ -442,27 +441,39 @@
     return [];
   };
 
+  // Direction booleans for an edge. `head` is the rightward arrow
+  // head (shown at the target end of a '→' or below a vertical '▼');
+  // `tail` is the leftward arrow head.
+  const edgeHeads = (direction) => ({
+    head: direction === "right" || direction === "both",
+    tail: direction === "left" || direction === "both",
+  });
+
+  // Render an edge's label rows on first access and cache them on the
+  // edge node so the horizontal and vertical paths don't re-invoke
+  // renderBoxRows for the same label.
+  const labelRowsOf = (edge, bc) => {
+    if (!edge._labelRows) edge._labelRows = renderBoxRows(edge.label, bc);
+    return edge._labelRows;
+  };
+
   // Format the text form of an edge token. Edges render at a fixed
   // length regardless of how many dashes the author typed, so '->',
   // '-->', and '--->' all produce the same arrow. Labelled edges use
   // two dashes on each side of the label so it breathes against the
   // adjacent box borders; unlabelled edges use a single dash plus the
   // arrow head.
-  const SIMPLE_EDGE_DASHES = 1;
-  const LABELED_EDGE_DASHES = 2;
   const edgeString = (edge, bc) => {
-    const head = edge.direction === "right" || edge.direction === "both";
-    const tail = edge.direction === "left" || edge.direction === "both";
+    const { head, tail } = edgeHeads(edge.direction);
     const leftArrow = tail ? bc.arrowL : "";
     const rightArrow = head ? bc.arrowR : "";
     if (edge.label) {
-      const labelRows = renderBoxRows(edge.label, bc);
-      const labelText = labelRows[0] ?? "";
-      const dashes = bc.h.repeat(LABELED_EDGE_DASHES);
+      const labelText = labelRowsOf(edge, bc)[0] ?? "";
+      const dashes = bc.h.repeat(2);
       const pad = "  "; // two spaces on each side so the label breathes
       return leftArrow + dashes + pad + labelText + pad + dashes + rightArrow;
     }
-    return leftArrow + bc.h.repeat(SIMPLE_EDGE_DASHES) + rightArrow;
+    return leftArrow + bc.h + rightArrow;
   };
 
   // Render a row (horizontal chain of node / edge items) to display
@@ -549,22 +560,15 @@
         for (const r of p.rows) result.push(padRow(r, maxW, "center"));
         continue;
       }
-      const { direction, label } = p.edge;
-      const down = direction === "right" || direction === "both";
-      const up = direction === "left" || direction === "both";
+      const { head: down, tail: up } = edgeHeads(p.edge.direction);
       // Top row carries the arrow head for an upward edge, otherwise
       // a '│' continuing the line down from the previous node. Bottom
-      // row mirrors that for a downward edge. When both sides have
-      // an arrow (bidirectional) the line collapses.
-      const topCh = up ? "▲" : "│";
-      const botCh = down ? "▼" : "│";
-      result.push(padRow(topCh, maxW, "center"));
-      if (label) {
-        const labelRows = renderBoxRows(label, bc);
-        const labelText = labelRows[0] ?? "";
-        result.push(padRow(labelText, maxW, "center"));
+      // row mirrors that for a downward edge.
+      result.push(padRow(up ? "▲" : "│", maxW, "center"));
+      if (p.edge.label) {
+        result.push(padRow(labelRowsOf(p.edge, bc)[0] ?? "", maxW, "center"));
       }
-      result.push(padRow(botCh, maxW, "center"));
+      result.push(padRow(down ? "▼" : "│", maxW, "center"));
     }
     return result;
   };
