@@ -33,6 +33,11 @@
   // and are stripped from the label. Empty input falls back to the
   // default example.
   const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
+  // Default outer dimensions when the author hasn't declared a size
+  // in the frontmatter. Chosen to match the WYSIWYG preview pane and
+  // to give flow chains a generous canvas before the auto-wrap-to-
+  // vertical kicks in.
+  const DEFAULT_SIZE = { w: 60, h: 40 };
 
   const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
@@ -297,6 +302,7 @@
         items,
       };
     }
+    if (!meta.size) meta.size = { ...DEFAULT_SIZE };
     root.meta = meta;
     return root;
   };
