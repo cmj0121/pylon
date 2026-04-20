@@ -155,6 +155,46 @@ pylon-chart[wysiwyg] {
   box-shadow: 0 0 0 3px var(--pylon-focus-ring);
 }
 
+.pylon-btn {
+  appearance: none;
+  background: var(--pylon-paper);
+  border: var(--pylon-border);
+  border-radius: var(--pylon-radius);
+  color: var(--pylon-ink);
+  font-family: var(--pylon-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 90ms ease;
+}
+
+.pylon-btn:hover {
+  border-color: var(--pylon-accent);
+  color: var(--pylon-accent);
+}
+
+.pylon-btn:focus-visible {
+  outline: none;
+  border-color: var(--pylon-accent);
+  box-shadow: 0 0 0 3px var(--pylon-focus-ring);
+}
+
+.pylon-btn:active {
+  transform: translateY(1px);
+}
+
+.pylon-btn:disabled {
+  cursor: default;
+  color: var(--pylon-accent);
+  border-color: var(--pylon-accent);
+  opacity: 0.85;
+}
+
 /* ---- view pane (drafting surface) ---------------------------------- */
 .pylon-view {
   flex: 1;

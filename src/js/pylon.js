@@ -231,6 +231,69 @@
     },
   };
 
+  // ---- exporters --------------------------------------------------------
+  // Produce the raw payload that the copy / download buttons hand to the
+  // clipboard or the filesystem. Each returns either {text, mime, ext} or
+  // {blob, mime, ext}. PNG is async because canvas.toBlob is callback-based.
+  const exporters = {
+    ascii(ast) {
+      const { label, bordered } = ast;
+      if (!bordered) {
+        return { text: label, mime: "text/plain", ext: "txt" };
+      }
+      const dw = displayWidth(label);
+      const pad = 3;
+      const line = "─".repeat(dw + pad * 2);
+      const sp = " ".repeat(pad);
+      const text = [
+        "┌" + line + "┐",
+        "│" + sp + label + sp + "│",
+        "└" + line + "┘",
+      ].join("\n");
+      return { text, mime: "text/plain", ext: "txt" };
+    },
+
+    svg(ast) {
+      const svg = renderers.svg(ast);
+      const text =
+        '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        new XMLSerializer().serializeToString(svg);
+      return { text, mime: "image/svg+xml", ext: "svg" };
+    },
+
+    async png(ast, opts = {}) {
+      const { label, bordered } = ast;
+      const color = opts.color || "#000";
+      const dw = displayWidth(label);
+      const w = dw * 10 + 32;
+      const h = 48;
+      const dpr = window.devicePixelRatio || 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+      if (bordered) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color;
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+        }
+      }
+      ctx.fillStyle = color;
+      ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, w / 2, h / 2);
+      const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+      return { blob, mime: "image/png", ext: "png" };
+    },
+  };
+
   // ---- custom element ---------------------------------------------------
   const FORMATS = ["ascii", "svg", "png"];
 
@@ -310,6 +373,14 @@
       const toolbar = document.createElement("div");
       toolbar.className = "pylon-toolbar";
 
+      const copyBtn = this._makeToolbarButton("Copy", () =>
+        this._copy(copyBtn),
+      );
+      const downloadBtn = this._makeToolbarButton("Download", () =>
+        this._download(),
+      );
+      toolbar.append(copyBtn, downloadBtn);
+
       const select = document.createElement("select");
       select.className = "pylon-format-select";
       const current = this._currentFormat();
@@ -341,6 +412,66 @@
       const color = getComputedStyle(this._viewHost).color;
       this._viewHost.innerHTML = "";
       this._viewHost.append(renderer(ast, { color }));
+    }
+
+    _makeToolbarButton(label, onClick) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pylon-btn";
+      btn.textContent = label;
+      btn.addEventListener("click", onClick);
+      return btn;
+    }
+
+    async _currentExport() {
+      const format = this._currentFormat();
+      const ast = parse(this._source);
+      const color = this._viewHost
+        ? getComputedStyle(this._viewHost).color
+        : "#000";
+      return await exporters[format](ast, { color });
+    }
+
+    async _copy(btn) {
+      try {
+        const out = await this._currentExport();
+        if (out.text) {
+          await navigator.clipboard.writeText(out.text);
+        } else if (out.blob && window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ [out.mime]: out.blob }),
+          ]);
+        } else {
+          throw new Error("unsupported");
+        }
+        if (btn) this._flashButton(btn, "Copied");
+      } catch (e) {
+        if (btn) this._flashButton(btn, "Failed");
+      }
+    }
+
+    async _download() {
+      const out = await this._currentExport();
+      const blob = out.blob ?? new Blob([out.text], { type: out.mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pylon.${out.ext}`;
+      a.style.display = "none";
+      document.body.append(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    _flashButton(btn, text) {
+      const original = btn.textContent;
+      btn.textContent = text;
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.disabled = false;
+      }, 900);
     }
   }
 
