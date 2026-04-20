@@ -734,12 +734,20 @@
     // (target !== source) anchor one arm under each box's inner-right
     // column so the arc spans between them. The arrow head marks the
     // target side regardless of which box is left.
+    //
+    // When multiple arcs stack, later arcs get pushed further from the
+    // row's linear block. A post-pass extends each arm upward through
+    // any still-empty cells so the arc visually connects back to the
+    // declaration instead of floating two rows below with no trail;
+    // when the extended column is the arrow arm, the `▲` is moved to
+    // the topmost reached row so it sits just beneath the box.
     const arcs = row.items.filter(
       (it) => it && it.type === "ref" && it.sameRowArc,
     );
     if (arcs.length > 0 && totalWidth > 0) {
       const colOf = (part) =>
         parts.slice(0, parts.indexOf(part)).reduce((s, p) => s + p.width, 0);
+      const arcSpecs = [];
       for (const ref of arcs) {
         const tgtPart = parts.find(
           (p) => p.kind === "block" && p.item === ref.target,
@@ -749,7 +757,6 @@
         const tgtW = tgtPart.width;
         let armL, armR, tgtArm;
         if (ref.sourceBox === ref.target) {
-          // Self-loop: two arms inside the single target box.
           armL = tgtStart + 2;
           armR = tgtStart + tgtW - 3;
           tgtArm = armR;
@@ -773,8 +780,29 @@
         row2[armL] = bc.bl;
         for (let c = armL + 1; c < armR; c++) row2[c] = bc.h;
         row2[armR] = bc.br;
+        arcSpecs.push({ armL, armR, tgtArm, armRow: out.length });
         out.push(row1.join(""));
         out.push(row2.join(""));
+      }
+
+      if (arcSpecs.length > 0) {
+        const grid = out.map((r) => Array.from(r));
+        for (const spec of arcSpecs) {
+          for (const col of [spec.armL, spec.armR]) {
+            const isArrow = col === spec.tgtArm;
+            let top = spec.armRow;
+            for (let r = spec.armRow - 1; r >= 0; r--) {
+              if ((grid[r][col] ?? " ") !== " ") break;
+              top = r;
+            }
+            for (let r = top; r < spec.armRow; r++) grid[r][col] = bc.v;
+            if (isArrow && top < spec.armRow) {
+              grid[spec.armRow][col] = bc.v;
+              grid[top][col] = "▲";
+            }
+          }
+        }
+        return grid.map((arr) => arr.join(""));
       }
     }
     return out;
