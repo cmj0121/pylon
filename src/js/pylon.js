@@ -75,12 +75,26 @@
       inner = body.slice(1, -1);
     }
 
+    // Leading / trailing '-' act as alignment springs that push content
+    // away from the dash. The default (no dash) is center.
+    //   [ xxx ]      center (default; visually balanced)
+    //   [- xxx -]    center (explicit; same effect)
+    //   [- xxx  ]    right  (spring at left pushes content right)
+    //   [  xxx -]    left   (spring at right pushes content left)
+    const leadingDash = /^\s*-\s+/;
+    const trailingDash = /\s+-\s*$/;
+    const hasLeft = leadingDash.test(inner);
+    const hasRight = trailingDash.test(inner);
+    let align = "center";
+    if (hasLeft && !hasRight) align = "right";
+    else if (!hasLeft && hasRight) align = "left";
+
     const label = inner
-      .replace(/^\s*-\s+/, "")
-      .replace(/\s+-\s*$/, "")
+      .replace(leadingDash, "")
+      .replace(trailingDash, "")
       .trim();
 
-    return { type: "box", label, bordered, meta };
+    return { type: "box", label, bordered, align, meta };
   };
 
   // ---- display width ----------------------------------------------------
@@ -158,8 +172,27 @@
   const CELL_PX_W = 10;
   const CELL_PX_H = 20;
 
+  // Distribute `slack` cells (or pixels) between leftPad and rightPad
+  // according to the alignment. For center / left / right the content
+  // hugs the named edge; minPad keeps it from touching the border wall
+  // unless the slack is too small for even that.
+  const distributePad = (slack, align, minPad) => {
+    if (slack <= 2 * minPad) {
+      const l = Math.floor(slack / 2);
+      return { leftPad: l, rightPad: slack - l };
+    }
+    if (align === "right") {
+      return { leftPad: slack - minPad, rightPad: minPad };
+    }
+    if (align === "left") {
+      return { leftPad: minPad, rightPad: slack - minPad };
+    }
+    const l = Math.floor(slack / 2);
+    return { leftPad: l, rightPad: slack - l };
+  };
+
   const layout = (ast) => {
-    const { label, meta = {} } = ast;
+    const { label, meta = {}, align = "center" } = ast;
     const rawLabelW = displayWidth(label);
     const autoCellsW = rawLabelW + NATURAL_PAD * 2 + 2;
     const autoCellsH = 3;
@@ -189,16 +222,20 @@
     }
     const labelW = displayWidth(displayLabel);
 
+    // Alignment always distributes the slack -- auto-sized boxes have
+    // 2*NATURAL_PAD of slack to play with, sized boxes have whatever
+    // remains after the label. Min 1 cell pad on the pushed-against edge.
     const hSlack = Math.max(0, outerCellsW - 2 - labelW);
-    const leftPad = Math.floor(hSlack / 2);
-    const rightPad = hSlack - leftPad;
+    const { leftPad, rightPad } = distributePad(hSlack, align, 1);
 
     const vSlack = Math.max(0, outerCellsH - 3);
     const topRows = Math.floor(vSlack / 2);
     const bottomRows = vSlack - topRows;
 
-    const pxW = hasSize ? outerCellsW * CELL_PX_W : rawLabelW * CELL_PX_W + 32;
-    const pxH = hasSize ? outerCellsH * CELL_PX_H : 48;
+    // SVG / PNG dimensions use the same cell model as ASCII so the
+    // three backends agree on outer width and alignment position.
+    const pxW = outerCellsW * CELL_PX_W;
+    const pxH = outerCellsH * CELL_PX_H;
 
     return {
       outerCellsW,
@@ -211,6 +248,8 @@
       bottomRows,
       pxW,
       pxH,
+      align,
+      hasSize,
     };
   };
 
@@ -280,9 +319,17 @@
         svg.append(rect);
       }
       const t = document.createElementNS(ns, "text");
-      t.setAttribute("x", w / 2);
+      if (L.align === "left") {
+        t.setAttribute("x", L.leftPad * CELL_PX_W);
+        t.setAttribute("text-anchor", "start");
+      } else if (L.align === "right") {
+        t.setAttribute("x", w - L.rightPad * CELL_PX_W);
+        t.setAttribute("text-anchor", "end");
+      } else {
+        t.setAttribute("x", w / 2);
+        t.setAttribute("text-anchor", "middle");
+      }
       t.setAttribute("y", h / 2);
-      t.setAttribute("text-anchor", "middle");
       t.setAttribute("dominant-baseline", "middle");
       t.setAttribute("font-family", "monospace");
       t.setAttribute("font-size", "14");
@@ -319,9 +366,19 @@
       }
       ctx.fillStyle = color;
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
-      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(L.label, w / 2, h / 2);
+      let textX;
+      if (L.align === "left") {
+        ctx.textAlign = "left";
+        textX = L.leftPad * CELL_PX_W;
+      } else if (L.align === "right") {
+        ctx.textAlign = "right";
+        textX = w - L.rightPad * CELL_PX_W;
+      } else {
+        ctx.textAlign = "center";
+        textX = w / 2;
+      }
+      ctx.fillText(L.label, textX, h / 2);
       const img = document.createElement("img");
       img.src = canvas.toDataURL("image/png");
       img.width = w;
@@ -388,9 +445,19 @@
       }
       ctx.fillStyle = color;
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
-      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(L.label, w / 2, h / 2);
+      let textX;
+      if (L.align === "left") {
+        ctx.textAlign = "left";
+        textX = L.leftPad * CELL_PX_W;
+      } else if (L.align === "right") {
+        ctx.textAlign = "right";
+        textX = w - L.rightPad * CELL_PX_W;
+      } else {
+        ctx.textAlign = "center";
+        textX = w / 2;
+      }
+      ctx.fillText(L.label, textX, h / 2);
       const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
       return { blob, mime: "image/png", ext: "png" };
     },
