@@ -253,6 +253,25 @@
     };
   };
 
+  // ---- themes -----------------------------------------------------------
+  // Known themes and their effect:
+  //   simple         default (Unicode box chars, CSS auto-palette)
+  //   ascii          ASCII-only box chars (+ - |) for the ASCII backend
+  //   dark / light   force the CSS palette regardless of prefers-color-scheme
+  // Unknown themes are passed through to the data-theme attribute so
+  // adopters can add custom palettes in their own stylesheet.
+  const UNICODE_BOX = {
+    tl: "┌",
+    tr: "┐",
+    bl: "└",
+    br: "┘",
+    h: "─",
+    v: "│",
+  };
+  const ASCII_BOX = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|" };
+  const boxChars = (ast) =>
+    ast.meta?.theme === "ascii" ? ASCII_BOX : UNICODE_BOX;
+
   // ---- renderers --------------------------------------------------------
   const renderers = {
     ascii(ast) {
@@ -264,17 +283,18 @@
         return pre;
       }
       const L = layout(ast);
+      const bc = boxChars(ast);
       const barLen = Math.max(0, L.outerCellsW - 2);
-      const line = "─".repeat(barLen);
-      const blank = "│" + " ".repeat(barLen) + "│";
+      const line = bc.h.repeat(barLen);
+      const blank = bc.v + " ".repeat(barLen) + bc.v;
       const content =
-        "│" + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + "│";
+        bc.v + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + bc.v;
 
-      const rows = ["┌" + line + "┐"];
+      const rows = [bc.tl + line + bc.tr];
       for (let i = 0; i < L.topRows; i++) rows.push(blank);
       rows.push(content);
       for (let i = 0; i < L.bottomRows; i++) rows.push(blank);
-      rows.push("└" + line + "┘");
+      rows.push(bc.bl + line + bc.br);
 
       // Per-cell DOM so CJK / emoji stay aligned regardless of font.
       for (let i = 0; i < rows.length; i++) {
@@ -399,16 +419,17 @@
         return { text: label, mime: "text/plain", ext: "txt" };
       }
       const L = layout(ast);
+      const bc = boxChars(ast);
       const barLen = Math.max(0, L.outerCellsW - 2);
-      const line = "─".repeat(barLen);
-      const blank = "│" + " ".repeat(barLen) + "│";
+      const line = bc.h.repeat(barLen);
+      const blank = bc.v + " ".repeat(barLen) + bc.v;
       const content =
-        "│" + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + "│";
-      const rows = ["┌" + line + "┐"];
+        bc.v + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + bc.v;
+      const rows = [bc.tl + line + bc.tr];
       for (let i = 0; i < L.topRows; i++) rows.push(blank);
       rows.push(content);
       for (let i = 0; i < L.bottomRows; i++) rows.push(blank);
-      rows.push("└" + line + "┘");
+      rows.push(bc.bl + line + bc.br);
       return { text: rows.join("\n"), mime: "text/plain", ext: "txt" };
     },
 
@@ -578,6 +599,12 @@
       if (!this._viewHost) return;
       const renderer = renderers[this._currentFormat()] ?? renderers.ascii;
       const ast = parse(this._source);
+      const theme = ast.meta?.theme;
+      if (theme) {
+        this.dataset.theme = theme;
+      } else {
+        delete this.dataset.theme;
+      }
       const color = getComputedStyle(this._viewHost).color;
       this._viewHost.innerHTML = "";
       this._viewHost.append(renderer(ast, { color }));

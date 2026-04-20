@@ -58,6 +58,31 @@ pylon-chart {
   }
 }
 
+/* Explicit theme overrides set via frontmatter (theme: dark / light).
+   Attribute selectors beat the media query, so these force the chosen
+   palette regardless of the OS preference. */
+pylon-chart[data-theme="dark"] {
+  --pylon-ink: #e6dfc8;
+  --pylon-ink-soft: #95a0b4;
+  --pylon-paper: #171d28;
+  --pylon-paper-sunk: #10151e;
+  --pylon-rule: #2c3342;
+  --pylon-grid: rgba(230, 223, 200, 0.05);
+  --pylon-accent: #7ab3dc;
+  --pylon-focus-ring: rgba(122, 179, 220, 0.28);
+}
+
+pylon-chart[data-theme="light"] {
+  --pylon-ink: #0f1c2d;
+  --pylon-ink-soft: #4a5871;
+  --pylon-paper: #fbf8ef;
+  --pylon-paper-sunk: #f4eeda;
+  --pylon-rule: #d6cbad;
+  --pylon-grid: rgba(15, 28, 45, 0.06);
+  --pylon-accent: #1a4d7a;
+  --pylon-focus-ring: rgba(26, 77, 122, 0.22);
+}
+
 /* ---- element shell -------------------------------------------------- */
 pylon-chart {
   color: var(--pylon-ink);
