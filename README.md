@@ -2,6 +2,10 @@
 
 > Draw your data and flow in plain text, by human or AI.
 
+[![CI](https://github.com/cmj0121/pylon/actions/workflows/ci.yml/badge.svg)](https://github.com/cmj0121/pylon/actions/workflows/ci.yml)
+
+Live demo: <https://cmj0121.github.io/pylon/>
+
 **Pylon** is a simple, human-friendly tool to draw your data and flow in plain text, by human or AI.
 It focuses on keeping charts and diagrams in plain text so they are easy to edit, share, and collaborate on.
 
