@@ -33,11 +33,6 @@
   // and are stripped from the label. Empty input falls back to the
   // default example.
   const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
-  // Default outer dimensions when the author hasn't declared a size
-  // in the frontmatter. Chosen to match the WYSIWYG preview pane and
-  // to give flow chains a generous canvas before the auto-wrap-to-
-  // vertical kicks in.
-  const DEFAULT_SIZE = { w: 60, h: 40 };
 
   const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
@@ -92,6 +87,26 @@
       .trim();
     return { align, clean };
   };
+
+  // Named node and reference tokens:
+  //
+  //   [ value :: name ] -- declare a node named `name`; the trailing
+  //                        '::' + identifier is stripped from the label.
+  //                        Using '::' (not a single colon) avoids
+  //                        collision with natural labels like
+  //                        '[Status: ok]' or '[- 12:00 -]'.
+  //   &name             -- reference a previously declared node. A ref
+  //                        renders as the name itself (inline text) so
+  //                        the declaration remains the only place the
+  //                        full content appears. References are *not*
+  //                        clones -- they are pointers back to the
+  //                        original binding.
+  //
+  // Duplicate declarations and unresolved references are pushed onto
+  // `root._errors` so the host element can surface them (as a toast,
+  // not a native alert).
+  const NAME_RE = /::\s*([A-Za-z_]\w*)\s*$/;
+  const REF_RE = /^&([A-Za-z_]\w*)/;
 
   // Flow-edge tokens recognised between sibling nodes on the same line:
   //
@@ -210,6 +225,16 @@
       } else if (c === "\n") {
         flushLine();
         i++;
+      } else if (c === "&") {
+        const m = s.slice(i).match(REF_RE);
+        if (m) {
+          flushText();
+          lineItems.push({ type: "ref", name: m[1] });
+          i += m[0].length;
+          continue;
+        }
+        textBuf += c;
+        i++;
       } else if (c === "<" || c === "-") {
         const match = s.slice(i).match(EDGE_RE);
         const token = match ? match[0] : "";
@@ -255,12 +280,150 @@
     }
     const inner = s.slice(1, -1);
     const { align, clean } = extractAlign(inner);
-    return {
+    let body = clean;
+    let name;
+    const m = clean.match(NAME_RE);
+    if (m) {
+      name = m[1];
+      body = clean.slice(0, m.index).trimEnd();
+    }
+    const box = {
       type: "box",
       bordered,
       align,
-      items: parseItems(clean),
+      items: parseItems(body),
     };
+    if (name) box.name = name;
+    return box;
+  };
+
+  // Walk the AST and collect every `box.name` into `map`. A repeated
+  // name is recorded in `errors` -- the first occurrence wins so that
+  // `&name` lookups remain deterministic.
+  const collectNames = (item, map, errors) => {
+    if (!item || typeof item !== "object") return;
+    if (item.type === "box" && item.name) {
+      if (map.has(item.name)) {
+        errors.push(`Duplicate node name: ${item.name}`);
+      } else {
+        map.set(item.name, item);
+      }
+    }
+    if (Array.isArray(item.items)) {
+      for (const child of item.items) collectNames(child, map, errors);
+    }
+    if (item.type === "edge" && item.label) {
+      collectNames(item.label, map, errors);
+    }
+  };
+
+  // Resolve `ref` nodes. Three paths:
+  //
+  //   1. Same-row arc: when the declaration lives in the *same* row
+  //      as the ref, the ref is tagged as `sameRowArc` and drawn as
+  //      a U-shaped arc beneath the row. The arms anchor on the
+  //      target box (arrow end) and the source box (the box that
+  //      precedes the ref's edge). When target === source the arc
+  //      collapses to the existing self-loop shape. The edge that
+  //      led into the ref is consumed.
+  //
+  //   2. Cross-row: the declaration is in a different top-level row.
+  //      Routed through the right-side gutter by overlayCrossRowGutter.
+  //
+  //   3. Inline text: no matching declaration, or another ref has
+  //      already claimed the target's gutter lane. Renders as the
+  //      name as plain text (or the literal `&name` on unresolved
+  //      with an error).
+  const tagSameRowArcs = (row) => {
+    const items = row.items;
+    const boxByName = new Map();
+    for (const c of items) {
+      if (c?.type === "box" && c.name) boxByName.set(c.name, c);
+    }
+    // What the current ref's arrow flows *out of*. Typically the box
+    // two slots back (`[src] <edge> &ref`), but in a chain like
+    // `&x -> &y` the previous ref's target stands in for `[src]`.
+    const boxLike = (it) => {
+      if (it?.type === "box") return it;
+      if (it?.type === "ref" && it.target) return it.target;
+      return null;
+    };
+    for (let i = 0; i < items.length; i++) {
+      const ref = items[i];
+      if (!(ref?.type === "ref")) continue;
+      const target = boxByName.get(ref.name);
+      if (!target) continue;
+      let sourceBox = null;
+      if (i >= 2 && items[i - 1]?.type === "edge") {
+        sourceBox = boxLike(items[i - 2]);
+      }
+      if (!sourceBox && i >= 1) {
+        sourceBox = boxLike(items[i - 1]);
+      }
+      ref.sameRowArc = true;
+      ref.target = target;
+      ref.sourceBox = sourceBox || target;
+      if (i > 0 && items[i - 1]?.type === "edge") {
+        items[i - 1]._consumedBySameRowArc = true;
+      }
+    }
+  };
+
+  const resolveRefText = (ref, map, errors) => {
+    if (!map.has(ref.name)) {
+      errors.push(`Undefined ref: &${ref.name}`);
+      return { type: "text", content: "&" + ref.name };
+    }
+    return { type: "text", content: ref.name };
+  };
+
+  // Cross-row tagging: a ref whose declaration lives in a *different*
+  // row is rendered as a right-side gutter arrow instead of inline
+  // text. Each target gets at most one gutter arrow -- later refs to
+  // the same target fall back to inline name text, because multiple
+  // arrows converging on the same column don't stack cleanly in an
+  // ASCII grid. The edge immediately preceding the claimed ref is
+  // consumed (it becomes the dash line into the gutter).
+  const markCrossRowRefs = (row, map, claimed) => {
+    for (let i = 0; i < row.items.length; i++) {
+      const ref = row.items[i];
+      if (!(ref && ref.type === "ref" && !ref.sameRowArc)) continue;
+      if (!map.has(ref.name)) continue;
+      const target = map.get(ref.name);
+      if (claimed.has(target)) continue;
+      claimed.add(target);
+      ref.crossRow = true;
+      ref.target = target;
+      if (i > 0 && row.items[i - 1]?.type === "edge") {
+        row.items[i - 1]._consumedByCrossRow = true;
+      }
+    }
+  };
+
+  const resolveRefs = (item, map, errors, claimed) => {
+    if (!item || typeof item !== "object") return;
+    if (!claimed) claimed = new Set();
+    if (item.type === "row") {
+      tagSameRowArcs(item);
+      markCrossRowRefs(item, map, claimed);
+    }
+    if (Array.isArray(item.items)) {
+      item.items = item.items.map((c) => {
+        if (c && c.type === "ref") {
+          if (c.sameRowArc || c.crossRow) return c;
+          return resolveRefText(c, map, errors);
+        }
+        resolveRefs(c, map, errors, claimed);
+        return c;
+      });
+    }
+    if (item.type === "edge" && item.label) {
+      if (item.label.type === "ref") {
+        item.label = resolveRefText(item.label, map, errors);
+      } else {
+        resolveRefs(item.label, map, errors, claimed);
+      }
+    }
   };
 
   const parse = (source) => {
@@ -301,8 +464,15 @@
         items,
       };
     }
-    if (!meta.size) meta.size = { ...DEFAULT_SIZE };
     root.meta = meta;
+
+    const nameMap = new Map();
+    const errors = [];
+    collectNames(root, nameMap, errors);
+    resolveRefs(root, nameMap, errors);
+    if (errors.length) {
+      root._errors = [...new Set(errors)];
+    }
     return root;
   };
 
@@ -499,14 +669,29 @@
   // instead of being clipped to fit the frame. Labelled edges keep
   // their label inline on its own row next to the arrow.
   const renderRowRows = (row, bc, maxW) => {
-    const parts = row.items.map((it) => {
+    // Same-row and cross-row refs (and the edges that led into them)
+    // render as arcs -- beneath the row for same-row arcs, in the
+    // right-side gutter for cross-row refs -- not inline.
+    const linearItems = row.items.filter(
+      (it) =>
+        !(it && it.type === "ref" && (it.sameRowArc || it.crossRow)) &&
+        !it._consumedBySameRowArc &&
+        !it._consumedByCrossRow,
+    );
+    const parts = linearItems.map((it) => {
       if (it.type === "edge") {
         const text = edgeString(it, bc);
-        return { kind: "edge", edge: it, text, width: displayWidth(text) };
+        return {
+          kind: "edge",
+          edge: it,
+          text,
+          width: displayWidth(text),
+          item: it,
+        };
       }
       const rows = renderItemRows(it, bc);
       const width = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
-      return { kind: "block", rows, width };
+      return { kind: "block", rows, width, item: it };
     });
 
     const totalWidth = parts.reduce((sum, p) => sum + p.width, 0);
@@ -542,6 +727,186 @@
       let line = "";
       for (const col of columns) line += col[r];
       out.push(line);
+    }
+
+    // Same-row refs render as U-arcs. Self-loops stay below when
+    // they're alone, and hop above when mixed with a cross-box arc --
+    // otherwise their source arm threads through the cross-box rows as
+    // a long dangling line. Two cross-box arcs between the same pair
+    // fold into a shared arrow row with nested U's (inner on near cols,
+    // outer on far cols); everything else takes one arrow + one corner
+    // row per arc. A post-pass extends below-arc arms upward into
+    // blank cells so they trail back to the declaration; the arrow
+    // head rides up with the arm when extended.
+    const arcs = row.items.filter(
+      (it) => it && it.type === "ref" && it.sameRowArc,
+    );
+    if (arcs.length > 0 && totalWidth > 0) {
+      const partStart = new Map();
+      {
+        let c = 0;
+        for (const p of parts) {
+          partStart.set(p, c);
+          c += p.width;
+        }
+      }
+      const blockPart = (item) =>
+        parts.find((p) => p.kind === "block" && p.item === item);
+
+      const belowResolved = [];
+      const selfResolved = [];
+      let hasCrossBox = false;
+      for (const ref of arcs) {
+        const tgtPart = blockPart(ref.target);
+        if (!tgtPart) continue;
+        const tgtStart = partStart.get(tgtPart);
+        const tgtW = tgtPart.width;
+        if (ref.sourceBox === ref.target) {
+          selfResolved.push({ tgtStart, tgtW });
+          continue;
+        }
+        const srcPart = blockPart(ref.sourceBox);
+        if (!srcPart) continue;
+        const srcStart = partStart.get(srcPart);
+        const srcW = srcPart.width;
+        hasCrossBox = true;
+        belowResolved.push({
+          tgtStart,
+          tgtW,
+          srcStart,
+          srcW,
+          lo: Math.min(tgtStart, srcStart),
+          hi: Math.max(tgtStart, srcStart),
+        });
+      }
+      const aboveResolved = hasCrossBox ? selfResolved : [];
+      if (!hasCrossBox) belowResolved.push(...selfResolved);
+
+      const compact =
+        belowResolved.length === 2 &&
+        belowResolved.every((r) => r.srcStart !== undefined) &&
+        belowResolved[0].lo === belowResolved[1].lo &&
+        belowResolved[0].hi === belowResolved[1].hi;
+
+      const belowSpecs = [];
+      for (let i = 0; i < belowResolved.length; i++) {
+        const r = belowResolved[i];
+        let armL, armR, tgtArm;
+        if (r.srcStart === undefined) {
+          armL = r.tgtStart + 2;
+          armR = r.tgtStart + r.tgtW - 3;
+          tgtArm = armR;
+        } else if (compact) {
+          const isTgtLeft = r.tgtStart < r.srcStart;
+          const leftStart = isTgtLeft ? r.tgtStart : r.srcStart;
+          const leftW = isTgtLeft ? r.tgtW : r.srcW;
+          const rightStart = isTgtLeft ? r.srcStart : r.tgtStart;
+          const rightW = isTgtLeft ? r.srcW : r.tgtW;
+          if (i === 0) {
+            armL = leftStart + leftW - 3;
+            armR = rightStart + 2;
+          } else {
+            armL = leftStart + 2;
+            armR = rightStart + rightW - 3;
+          }
+          tgtArm = isTgtLeft ? armL : armR;
+        } else {
+          const tgtCol = r.tgtStart + r.tgtW - 3;
+          const srcCol = r.srcStart + r.srcW - 3;
+          armL = Math.min(tgtCol, srcCol);
+          armR = Math.max(tgtCol, srcCol);
+          tgtArm = tgtCol;
+        }
+        if (armR > armL) belowSpecs.push({ armL, armR, tgtArm });
+      }
+
+      const blankCells = () => new Array(totalWidth).fill(" ");
+      const paintArrow = (cells, spec, head) => {
+        cells[spec.armL] = spec.tgtArm === spec.armL ? head : bc.v;
+        cells[spec.armR] = spec.tgtArm === spec.armR ? head : bc.v;
+      };
+      const paintCorner = (cells, spec, left, right) => {
+        cells[spec.armL] = left;
+        for (let c = spec.armL + 1; c < spec.armR; c++) cells[c] = bc.h;
+        cells[spec.armR] = right;
+      };
+      const extendArmsUp = (grid, specs) => {
+        for (const spec of specs) {
+          for (const c of [spec.armL, spec.armR]) {
+            const isArrow = c === spec.tgtArm;
+            let top = spec.arrowRow;
+            for (let r = spec.arrowRow - 1; r >= 0; r--) {
+              if ((grid[r][c] ?? " ") !== " ") break;
+              top = r;
+            }
+            for (let r = top; r < spec.arrowRow; r++) grid[r][c] = bc.v;
+            if (isArrow && top < spec.arrowRow) {
+              grid[spec.arrowRow][c] = bc.v;
+              grid[top][c] = "▲";
+            }
+          }
+        }
+      };
+
+      let bodyOut = out;
+
+      if (compact && belowSpecs.length === 2) {
+        belowSpecs.sort((a, b) => a.armR - a.armL - (b.armR - b.armL));
+        const arrowRowIdx = bodyOut.length;
+        const arrow = blankCells();
+        for (const spec of belowSpecs) {
+          paintArrow(arrow, spec, "▲");
+          spec.arrowRow = arrowRowIdx;
+        }
+        bodyOut.push(arrow.join(""));
+        for (const spec of belowSpecs) {
+          const corner = blankCells();
+          paintCorner(corner, spec, bc.bl, bc.br);
+          spec.cornerRow = bodyOut.length;
+          bodyOut.push(corner.join(""));
+        }
+        const grid = bodyOut.map((r) => Array.from(r));
+        // Outer arms drop through inner corner rows; staggered cols
+        // guarantee they land on blanks.
+        for (const spec of belowSpecs) {
+          for (const c of [spec.armL, spec.armR]) {
+            for (let r = arrowRowIdx + 1; r < spec.cornerRow; r++) {
+              if ((grid[r][c] ?? " ") === " ") grid[r][c] = bc.v;
+            }
+          }
+        }
+        extendArmsUp(grid, belowSpecs);
+        bodyOut = grid.map((arr) => arr.join(""));
+      } else if (belowSpecs.length > 0) {
+        for (const spec of belowSpecs) {
+          const arrow = blankCells();
+          paintArrow(arrow, spec, "▲");
+          spec.arrowRow = bodyOut.length;
+          bodyOut.push(arrow.join(""));
+          const corner = blankCells();
+          paintCorner(corner, spec, bc.bl, bc.br);
+          bodyOut.push(corner.join(""));
+        }
+        const grid = bodyOut.map((r) => Array.from(r));
+        extendArmsUp(grid, belowSpecs);
+        bodyOut = grid.map((arr) => arr.join(""));
+      }
+
+      // Above-arcs sit flush against the box top (arrow becomes `▼`),
+      // so no extend-up is needed.
+      const aboveRows = [];
+      for (const r of aboveResolved) {
+        const armL = r.tgtStart + 2;
+        const armR = r.tgtStart + r.tgtW - 3;
+        if (armR <= armL) continue;
+        const spec = { armL, armR, tgtArm: armR };
+        const corner = blankCells();
+        paintCorner(corner, spec, bc.tl, bc.tr);
+        const arm = blankCells();
+        paintArrow(arm, spec, "▼");
+        aboveRows.push(corner.join(""), arm.join(""));
+      }
+      return aboveRows.concat(bodyOut);
     }
     return out;
   };
@@ -610,8 +975,15 @@
     const naturalOuterW = naturalContentW + padBudget + borderBudget;
     const naturalOuterH = itemRows.length + borderBudget;
 
-    const outerW = targetW ?? naturalOuterW;
-    const outerH = targetH ?? naturalOuterH;
+    // `meta.size` is a MAXIMUM, not a fixed frame. When content is
+    // smaller than the declared size the box stays tight to its
+    // content; when content is larger, the outer is clamped to the
+    // declared size (flow chains have already wrapped via
+    // `sizedContentW`; unwrappable text is clipped by `clipRow`).
+    const outerW =
+      targetW !== undefined ? Math.min(naturalOuterW, targetW) : naturalOuterW;
+    const outerH =
+      targetH !== undefined ? Math.min(naturalOuterH, targetH) : naturalOuterH;
 
     const contentW = Math.max(0, outerW - borderBudget);
     const contentH = Math.max(0, outerH - borderBudget);
@@ -630,11 +1002,190 @@
     ];
   };
 
+  // Overlay right-side gutter arrows for cross-row refs. Called after
+  // the regular render produces `rows`. For each cross-row ref on a
+  // top-level row, draws an arc from the source row (dashes + corner
+  // entering the gutter) to the target box's row (arrow entering the
+  // box + dashes + corner). Widens all rows to accommodate the gutter.
+  //
+  // Scope is deliberately shallow -- only top-level items are tracked,
+  // so a ref nested inside a nested box won't route. That matches the
+  // current user-facing surface (multi-line source yields top-level
+  // row items), and keeps the tracker free of deep position bookkeeping.
+  const GUTTER_EXTRA = 3;
+  const overlayCrossRowGutter = (rows, ast, bc) => {
+    const items = ast.items || [];
+    const hasCross = items.some(
+      (it) =>
+        it?.type === "row" &&
+        it.items?.some((c) => c?.type === "ref" && c.crossRow),
+    );
+    if (!hasCross) return rows;
+
+    const bordered = ast.bordered;
+    const hasPad = bordered || items.length > 1;
+    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    const borderBudget = bordered ? 2 : 0;
+    const targetW = ast.meta?.size?.w;
+    const sizedContentW =
+      targetW !== undefined
+        ? Math.max(1, targetW - borderBudget - padBudget)
+        : undefined;
+
+    // Per-item render + absolute-start tracking (mirrors renderBoxRows'
+    // stacking). Re-rendering is cheap relative to overall work and
+    // keeps the overlay decoupled from the main render path.
+    const perItemRows = new Map();
+    const itemStart = new Map();
+    let cursor = 0;
+    for (const item of items) {
+      const r = renderItemRows(item, bc, sizedContentW);
+      perItemRows.set(item, r);
+      itemStart.set(item, cursor);
+      cursor += r.length;
+    }
+
+    const borderTop = bordered ? 1 : 0;
+    const paddedRows = rows.length - 2 * borderTop;
+    const extraTop = Math.max(0, Math.floor((paddedRows - cursor) / 2));
+    const rowOffset = borderTop + extraTop;
+
+    // Horizontal column math: `rows` are already padded to the root's
+    // outer width. For each top-level item the renderer center-pads
+    // its own width within the root's content area, so we re-derive
+    // that leftPad here to translate inner columns into absolute ones.
+    const rowWidth = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+    const borderLeft = bordered ? 1 : 0;
+    const contentInnerW = rowWidth - 2 * borderLeft;
+    const centerPad = (itemW) =>
+      Math.max(0, Math.floor((contentInnerW - itemW) / 2));
+    const absCol = (itemW, innerCol) =>
+      borderLeft + centerPad(itemW) + innerCol;
+
+    // Named-box absolute positions. A top-level named box sits
+    // alone; a named box inside a row gets its startCol from the
+    // cumulative linear widths before it.
+    const boxAbs = new Map();
+    for (const item of items) {
+      const base = itemStart.get(item) + rowOffset;
+      if (item.type === "box" && item.name) {
+        const r = perItemRows.get(item);
+        const itemW = r.reduce((m, x) => Math.max(m, displayWidth(x)), 0);
+        boxAbs.set(item, {
+          start: base,
+          height: r.length,
+          startCol: absCol(itemW, 0),
+          width: itemW,
+        });
+      } else if (item.type === "row") {
+        const linearItems = item.items.filter(
+          (it) =>
+            !(it && it.type === "ref" && (it.sameRowArc || it.crossRow)) &&
+            !it._consumedBySameRowArc &&
+            !it._consumedByCrossRow,
+        );
+        const parts = linearItems.map((it) => {
+          if (it.type === "edge") {
+            return {
+              kind: "edge",
+              item: it,
+              width: displayWidth(edgeString(it, bc)),
+            };
+          }
+          const subR = renderItemRows(it, bc);
+          return {
+            kind: "block",
+            item: it,
+            rows: subR,
+            width: subR.reduce((m, x) => Math.max(m, displayWidth(x)), 0),
+            height: subR.length,
+          };
+        });
+        const rowLinearW = parts.reduce((s, p) => s + p.width, 0);
+        let innerCol = 0;
+        for (const p of parts) {
+          if (p.kind === "block" && p.item.type === "box" && p.item.name) {
+            boxAbs.set(p.item, {
+              start: base,
+              height: p.height,
+              startCol: absCol(rowLinearW, innerCol),
+              width: p.width,
+            });
+          }
+          innerCol += p.width;
+        }
+        // Cache row metadata so the exits pass below doesn't
+        // reconstruct parts a second time.
+        item._linearParts = parts;
+        item._rowLinearW = rowLinearW;
+      }
+    }
+
+    // Collect cross-row exits with source midline + exit column.
+    const exits = [];
+    for (const item of items) {
+      if (item.type !== "row") continue;
+      const base = itemStart.get(item) + rowOffset;
+      const parts = item._linearParts || [];
+      const rowLinearW = item._rowLinearW ?? 0;
+      const h = parts.reduce(
+        (m, p) => (p.kind === "block" ? Math.max(m, p.height) : m),
+        1,
+      );
+      const midlineOffset = Math.floor((h - 1) / 2);
+      for (const ref of item.items) {
+        if (ref?.type !== "ref" || !ref.crossRow) continue;
+        const tgt = boxAbs.get(ref.target);
+        if (!tgt) continue;
+        exits.push({
+          srcRow: base + midlineOffset,
+          srcCol: absCol(rowLinearW, rowLinearW),
+          tgtRow: tgt.start + Math.floor((tgt.height - 1) / 2),
+          tgtCol: tgt.startCol + tgt.width,
+        });
+      }
+      delete item._linearParts;
+      delete item._rowLinearW;
+    }
+    if (exits.length === 0) return rows;
+
+    const gutterCol = rowWidth + GUTTER_EXTRA - 1;
+    const newWidth = gutterCol + 1;
+
+    const grid = rows.map((r) => {
+      const arr = Array.from(r);
+      while (arr.length < newWidth) arr.push(" ");
+      return arr;
+    });
+
+    for (const ex of exits) {
+      for (let c = ex.srcCol; c < gutterCol; c++) grid[ex.srcRow][c] = bc.h;
+      for (let c = ex.tgtCol + 1; c < gutterCol; c++) grid[ex.tgtRow][c] = bc.h;
+      grid[ex.tgtRow][ex.tgtCol] = bc.arrowL;
+      if (ex.srcRow > ex.tgtRow) {
+        grid[ex.srcRow][gutterCol] = bc.br;
+        grid[ex.tgtRow][gutterCol] = bc.tr;
+        for (let r = ex.tgtRow + 1; r < ex.srcRow; r++)
+          if (grid[r][gutterCol] === " ") grid[r][gutterCol] = bc.v;
+      } else {
+        grid[ex.srcRow][gutterCol] = bc.tr;
+        grid[ex.tgtRow][gutterCol] = bc.br;
+        for (let r = ex.srcRow + 1; r < ex.tgtRow; r++)
+          if (grid[r][gutterCol] === " ") grid[r][gutterCol] = bc.v;
+      }
+    }
+    return grid.map((arr) => arr.join(""));
+  };
+
   // Top-level render entry: honors meta.size on the root node only.
   const renderRows = (ast) => {
     const bc = boxChars(ast);
     const size = ast.meta?.size;
-    return renderBoxRows(ast, bc, { targetW: size?.w, targetH: size?.h });
+    const rows = renderBoxRows(ast, bc, {
+      targetW: size?.w,
+      targetH: size?.h,
+    });
+    return overlayCrossRowGutter(rows, ast, bc);
   };
 
   // Shared helpers for the SVG / PNG backends. Each row becomes one line
@@ -940,7 +1491,10 @@
         '<span class="pylon-guide-sep">·</span>' +
         "<code>[- x&nbsp;&nbsp;]</code> right" +
         '<span class="pylon-guide-sep">·</span>' +
-        "<code>[&nbsp;&nbsp;x -]</code> left</div>";
+        "<code>[&nbsp;&nbsp;x -]</code> left</div>" +
+        '<div><span class="pylon-guide-key">name:</span> <code>[x :: foo]</code>' +
+        '<span class="pylon-guide-sep">·</span>' +
+        '<span class="pylon-guide-key">ref:</span> <code>&amp;foo</code></div>';
 
       const toolbar = document.createElement("div");
       toolbar.className = "pylon-toolbar";
@@ -990,6 +1544,48 @@
       const color = getComputedStyle(this._viewHost).color;
       this._viewHost.innerHTML = "";
       this._viewHost.append(renderer(ast, { color }));
+      const errors = ast._errors;
+      if (errors?.length) {
+        this._showToast(errors.join("\n"));
+      } else {
+        this._clearToast();
+      }
+    }
+
+    // Component-scoped toast. Single instance: a new error replaces
+    // the previous toast and resets the auto-dismiss timer. The
+    // message is compared to the currently shown text so rapid edits
+    // that keep triggering the same error don't cause a visible
+    // flicker each keystroke.
+    _showToast(message) {
+      if (this._toastEl && this._toastEl.textContent === message) {
+        this._resetToastTimer();
+        return;
+      }
+      this._clearToast();
+      const toast = document.createElement("div");
+      toast.className = "pylon-toast";
+      toast.setAttribute("role", "alert");
+      toast.textContent = message;
+      this.append(toast);
+      this._toastEl = toast;
+      this._resetToastTimer();
+    }
+
+    _resetToastTimer() {
+      if (this._toastTimer) clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => this._clearToast(), 3200);
+    }
+
+    _clearToast() {
+      if (this._toastTimer) {
+        clearTimeout(this._toastTimer);
+        this._toastTimer = null;
+      }
+      if (this._toastEl) {
+        this._toastEl.remove();
+        this._toastEl = null;
+      }
     }
 
     _makeToolbarButton(label, onClick) {

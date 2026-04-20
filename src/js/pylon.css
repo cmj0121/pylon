@@ -1,9 +1,10 @@
 /*
  * Pylon -- default stylesheet
  *
- * Aesthetic: technical drafting notebook. Cream editor surface, faint
- * graph-paper preview, deep ink-blue accent, monospace throughout.
- * Adopters can re-skin by overriding the --pylon-* custom properties.
+ * Aesthetic: engineer's drafting notebook. Cream paper tacked inside a
+ * framed plate, pale graph ruling beneath, deep plate-blue ink for
+ * accents, and margin-stamped warnings in warm rust. Mono throughout.
+ * Adopters re-skin via the --pylon-* custom properties.
  */
 
 :root,
@@ -13,10 +14,19 @@ pylon-chart {
   --pylon-ink-soft: #4a5871;
   --pylon-paper: #fbf8ef;
   --pylon-paper-sunk: #f4eeda;
+  --pylon-paper-deep: #ebe2c6; /* sunken-tray shadow */
   --pylon-rule: #d6cbad;
-  --pylon-grid: rgba(15, 28, 45, 0.06);
+  --pylon-rule-strong: #b9a97e; /* registration marks, stamp outlines */
+  --pylon-grid: rgba(15, 28, 45, 0.05);
+  --pylon-grid-major: rgba(15, 28, 45, 0.1); /* every 5th ruling */
   --pylon-accent: #1a4d7a;
   --pylon-focus-ring: rgba(26, 77, 122, 0.22);
+  --pylon-highlight: #f5e59a; /* highlighter swatch for ::selection */
+
+  /* warning: rust stamp on cream paper, not emergency red */
+  --pylon-warn-ink: #fff5e6;
+  --pylon-warn-paper: #8a2a1f;
+  --pylon-warn-rule: #5d1e16;
 
   /* typography
    *
@@ -55,10 +65,17 @@ pylon-chart {
     --pylon-ink-soft: #95a0b4;
     --pylon-paper: #171d28;
     --pylon-paper-sunk: #10151e;
+    --pylon-paper-deep: #070a10;
     --pylon-rule: #2c3342;
-    --pylon-grid: rgba(230, 223, 200, 0.05);
+    --pylon-rule-strong: #4b5467;
+    --pylon-grid: rgba(230, 223, 200, 0.04);
+    --pylon-grid-major: rgba(230, 223, 200, 0.09);
     --pylon-accent: #7ab3dc;
     --pylon-focus-ring: rgba(122, 179, 220, 0.28);
+    --pylon-highlight: #4a4226;
+    --pylon-warn-ink: #fbe1c7;
+    --pylon-warn-paper: #4a1d17;
+    --pylon-warn-rule: #6a2e23;
   }
 }
 
@@ -67,14 +84,22 @@ pylon-chart[data-theme="dark"] {
   --pylon-ink-soft: #95a0b4;
   --pylon-paper: #171d28;
   --pylon-paper-sunk: #10151e;
+  --pylon-paper-deep: #070a10;
   --pylon-rule: #2c3342;
-  --pylon-grid: rgba(230, 223, 200, 0.05);
+  --pylon-rule-strong: #4b5467;
+  --pylon-grid: rgba(230, 223, 200, 0.04);
+  --pylon-grid-major: rgba(230, 223, 200, 0.09);
   --pylon-accent: #7ab3dc;
   --pylon-focus-ring: rgba(122, 179, 220, 0.28);
+  --pylon-highlight: #4a4226;
+  --pylon-warn-ink: #fbe1c7;
+  --pylon-warn-paper: #4a1d17;
+  --pylon-warn-rule: #6a2e23;
 }
 
 /* ---- element shell -------------------------------------------------- */
 pylon-chart {
+  position: relative;
   color: var(--pylon-ink);
   font-family: var(--pylon-font-mono);
   display: inline-block;
@@ -88,15 +113,32 @@ pylon-chart[wysiwyg] {
   width: 100%;
 }
 
+/* Highlighter swatch: scoped to the component so adopters can keep
+   their own selection style elsewhere on the page. */
+pylon-chart ::selection {
+  background: var(--pylon-highlight);
+  color: var(--pylon-ink);
+}
+
 /* ---- editor (left pane) -------------------------------------------- */
+/* Lined notebook page: a single vertical rule lives at ~1.75rem from
+   the left edge, and the text gutter sits beyond it, so edits feel
+   like writing into a stenographer's pad rather than a plain textarea. */
 .pylon-editor {
   all: unset;
   display: block;
   box-sizing: border-box;
   width: 100%;
   min-height: 12rem;
-  padding: var(--pylon-pad);
-  background: var(--pylon-paper);
+  padding: var(--pylon-pad) 1.2rem var(--pylon-pad) 2.5rem;
+  background-color: var(--pylon-paper);
+  background-image: linear-gradient(
+    to right,
+    transparent 1.75rem,
+    var(--pylon-rule) 1.75rem,
+    var(--pylon-rule) calc(1.75rem + 1px),
+    transparent calc(1.75rem + 1px)
+  );
   border: var(--pylon-border);
   border-radius: var(--pylon-radius);
   color: var(--pylon-ink);
@@ -105,6 +147,9 @@ pylon-chart[wysiwyg] {
   line-height: 1.55;
   caret-color: var(--pylon-accent);
   resize: vertical;
+  box-shadow:
+    inset 0 1px 0 rgba(15, 28, 45, 0.04),
+    inset 0 0 0 1px rgba(15, 28, 45, 0.01);
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
@@ -121,49 +166,88 @@ pylon-chart[wysiwyg] {
   box-shadow: 0 0 0 3px var(--pylon-focus-ring);
 }
 
-/* ---- right pane: toolbar + view ------------------------------------ */
+/* ---- right pane: framed drafting plate ----------------------------- */
+/* Guide, toolbar, and view share one outer rule with thin internal
+   dividers, so the right-hand side reads as a single plate of paper
+   instead of three stacked cards floating in the grid gap. */
 .pylon-right {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   min-width: 0;
-}
-
-.pylon-guide {
-  padding: 0.45rem 0.65rem;
   background: var(--pylon-paper);
   border: var(--pylon-border);
   border-radius: var(--pylon-radius);
+  overflow: hidden;
+}
+
+.pylon-guide {
+  position: relative;
+  padding: 0.55rem 0.75rem 0.55rem 5rem;
+  border-bottom: var(--pylon-border);
   color: var(--pylon-ink-soft);
   font-family: var(--pylon-font-mono);
-  font-size: 0.68rem;
-  line-height: 1.65;
+  font-size: 0.7rem;
+  line-height: 1.7;
   letter-spacing: 0.01em;
+}
+
+/* Stamped section label in the left gutter, sized and outlined like a
+   rubber stamp. The same treatment appears on .pylon-toolbar so both
+   rows advertise their role symmetrically. */
+.pylon-guide::before {
+  content: "LEGEND";
+  position: absolute;
+  top: 0.6rem;
+  left: 0.75rem;
+  padding: 0.08rem 0.4rem;
+  border: 1px solid var(--pylon-rule-strong);
+  border-radius: 1px;
+  color: var(--pylon-rule-strong);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
 }
 
 .pylon-guide code {
   font: inherit;
   color: var(--pylon-ink);
   background: transparent;
-  padding: 0;
+  padding: 0 0.2ch;
 }
 
 .pylon-guide .pylon-guide-key {
   color: var(--pylon-accent);
-  margin-right: 0.4ch;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.62rem;
+  font-weight: 600;
+  margin-right: 0.45ch;
 }
 
 .pylon-guide .pylon-guide-sep {
+  color: var(--pylon-rule);
   margin: 0 0.7ch;
-  opacity: 0.5;
 }
 
 .pylon-toolbar {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 0.5rem;
-  min-height: 1.75rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: var(--pylon-border);
+  min-height: 2rem;
+}
+
+.pylon-toolbar::before {
+  content: "TOOLS";
+  padding: 0.08rem 0.4rem;
+  border: 1px solid var(--pylon-rule-strong);
+  border-radius: 1px;
+  color: var(--pylon-rule-strong);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  margin-right: auto; /* pushes Copy/Download/format-select to the right */
 }
 
 .pylon-format-select {
@@ -240,30 +324,92 @@ pylon-chart[wysiwyg] {
 }
 
 /* ---- view pane (drafting surface) ---------------------------------- */
+/* Four background layers build the ruling: minor grid at 1.5rem,
+   major grid every 5th line (7.5rem) for the "engineer's paper"
+   cadence. An inset shadow sinks the surface into the framed plate
+   and a grain of paper-deep tone rounds the top edge. */
 .pylon-view {
   flex: 1;
   min-height: 12rem;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--pylon-pad);
+  padding: 2rem 1.25rem 2.5rem;
   background-color: var(--pylon-paper-sunk);
-  background-image: linear-gradient(var(--pylon-grid) 1px, transparent 1px),
+  background-image: linear-gradient(
+      var(--pylon-grid-major) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, var(--pylon-grid-major) 1px, transparent 1px),
+    linear-gradient(var(--pylon-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--pylon-grid) 1px, transparent 1px);
-  background-size: 1.5rem 1.5rem;
+  background-size:
+    7.5rem 7.5rem,
+    7.5rem 7.5rem,
+    1.5rem 1.5rem,
+    1.5rem 1.5rem;
   background-position: -1px -1px;
-  border: var(--pylon-border);
-  border-radius: var(--pylon-radius);
   color: var(--pylon-ink);
   overflow: auto;
+  box-shadow:
+    inset 0 1px 0 var(--pylon-paper-deep),
+    inset 0 8px 16px -14px var(--pylon-paper-deep);
 }
 
-/* Non-wysiwyg: the view is not a preview surface, just inline output. */
+/* Four registration L-brackets at the plate corners, painted via a
+   single pseudo-element so we don't add DOM. Each corner is two
+   12px strokes composed with linear-gradient + no-repeat. */
+.pylon-view::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 0 0 /
+      12px 1px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 0 0 /
+      1px 12px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 100% 0 /
+      12px 1px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 100% 0 /
+      1px 12px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 0 100% /
+      12px 1px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 0 100% /
+      1px 12px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 100%
+      100% / 12px 1px no-repeat,
+    linear-gradient(var(--pylon-rule-strong), var(--pylon-rule-strong)) 100%
+      100% / 1px 12px no-repeat;
+}
+
+/* Plate signature, drawn-by stamp in the bottom margin. */
+.pylon-view::after {
+  content: "FIG · PYLON";
+  position: absolute;
+  bottom: 0.55rem;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--pylon-rule-strong);
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  pointer-events: none;
+}
+
+/* Non-wysiwyg: the view is not a preview surface, just inline output.
+   Strip the plate chrome so it renders as a tight monospace block. */
 pylon-chart:not([wysiwyg]) .pylon-view {
   min-height: auto;
   padding: 0;
   background: transparent;
   border: none;
+  box-shadow: none;
+}
+pylon-chart:not([wysiwyg]) .pylon-view::before,
+pylon-chart:not([wysiwyg]) .pylon-view::after {
+  display: none;
 }
 
 /* ---- renderers ----------------------------------------------------- */
@@ -297,4 +443,69 @@ pylon-chart:not([wysiwyg]) .pylon-view {
   display: block;
   max-width: 100%;
   color: var(--pylon-ink);
+}
+
+/* ---- parse-error toast --------------------------------------------- */
+/* Margin-stamped rust note instead of an emergency banner: warm rust
+   ink, circled `!` bullet, and a quiet -0.4deg tilt so it reads as a
+   pencilled-in correction rather than an OS alert. Short-lived and
+   non-interactive -- surfaces parse errors without blocking edits. */
+.pylon-toast {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  max-width: min(28rem, 80%);
+  padding: 0.55rem 0.9rem 0.55rem 2.1rem;
+  background: var(--pylon-warn-paper);
+  color: var(--pylon-warn-ink);
+  border: 1px solid var(--pylon-warn-rule);
+  border-radius: var(--pylon-radius);
+  font-family: var(--pylon-font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.1),
+    0 8px 22px -12px rgba(15, 28, 45, 0.32);
+  z-index: 10;
+  pointer-events: none;
+  white-space: pre-wrap;
+  transform: rotate(-0.4deg);
+  animation: pylon-toast-in 220ms cubic-bezier(0.24, 0.72, 0.2, 1);
+}
+
+/* Circled bang, sitting in the left gutter of the note. */
+.pylon-toast::before {
+  content: "!";
+  position: absolute;
+  top: 0.48rem;
+  left: 0.65rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pylon-warn-ink);
+  border-radius: 50%;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+@keyframes pylon-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) rotate(-1.2deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(-0.4deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pylon-toast {
+    animation: none;
+    transform: none;
+  }
 }
