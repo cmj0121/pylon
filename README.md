@@ -186,9 +186,10 @@ Named nodes and references:
 
 - `[ value :: name ]` — declare a node named `name`. The trailing `::` + identifier is stripped from the rendered
   label and attached to the AST. Applies to `(...)` as well.
-- `&name` — reference a previously declared node; the reference renders as a clone of that node's subtree. Works
-  inline in flow chains (`[ A ] -> &name`) or as a standalone stacked item.
-- Duplicate declarations and unresolved / cyclic references surface as a toast inside the `<pylon-chart>` element
+- `&name` — reference a previously declared node. A reference is a pointer, not a copy: it renders as the name
+  itself (inline text), so the declaration remains the only place the full content appears. Works in flow chains
+  (`[ A ] -> &name`) or as a standalone stacked item.
+- Duplicate declarations and unresolved references surface as a toast inside the `<pylon-chart>` element
   (no native `alert`).
 
 Frontmatter (YAML-subset, at the head of the source, fenced by `---`):

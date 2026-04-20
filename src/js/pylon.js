@@ -95,9 +95,12 @@
   //                        Using '::' (not a single colon) avoids
   //                        collision with natural labels like
   //                        '[Status: ok]' or '[- 12:00 -]'.
-  //   &name             -- reference a previously declared node; the
-  //                        reference is replaced with a clone of that
-  //                        node's subtree before rendering.
+  //   &name             -- reference a previously declared node. A ref
+  //                        renders as the name itself (inline text) so
+  //                        the declaration remains the only place the
+  //                        full content appears. References are *not*
+  //                        clones -- they are pointers back to the
+  //                        original binding.
   //
   // Duplicate declarations and unresolved references are pushed onto
   // `root._errors` so the host element can surface them (as a toast,
@@ -314,48 +317,35 @@
     }
   };
 
-  // Replace every `ref` node with a deep clone of the named subtree.
-  // Cycles (a named node referencing itself transitively) collapse to
-  // the literal text `&name` so rendering cannot recurse forever.
-  // Unresolved names and cycles append to `errors` so typos surface
-  // alongside duplicate-name reports.
-  const resolveRef = (name, map, inFlight, errors) => {
-    if (inFlight.has(name)) {
-      errors.push(`Cyclic ref: &${name}`);
-      return { type: "text", content: "&" + name };
+  // Rewrite each `ref` node in place as inline text that displays the
+  // referenced name. The declaration is the only visual instance of
+  // the node's content; references just point back at it by name.
+  // Unresolved references still render the literal `&name` so the
+  // author can see where the broken pointer is.
+  const resolveRefNode = (ref, map, errors) => {
+    if (!map.has(ref.name)) {
+      errors.push(`Undefined ref: &${ref.name}`);
+      return { type: "text", content: "&" + ref.name };
     }
-    if (!map.has(name)) {
-      errors.push(`Undefined ref: &${name}`);
-      return { type: "text", content: "&" + name };
-    }
-    inFlight.add(name);
-    const clone = cloneResolved(map.get(name), map, inFlight, errors);
-    inFlight.delete(name);
-    return clone;
+    return { type: "text", content: ref.name };
   };
 
-  const cloneResolved = (item, map, inFlight, errors) => {
-    if (!item || typeof item !== "object") return item;
-    if (item.type === "ref") {
-      const expanded = resolveRef(item.name, map, inFlight, errors);
-      // The expansion is an *instance* of the declaration, not the
-      // declaration itself -- strip `name` so name-aware consumers
-      // don't see it as a second binding.
-      if (expanded && expanded.type === "box") delete expanded.name;
-      return expanded;
-    }
-    const clone = { ...item };
+  const resolveRefs = (item, map, errors) => {
+    if (!item || typeof item !== "object") return;
     if (Array.isArray(item.items)) {
-      clone.items = item.items.map((c) =>
-        cloneResolved(c, map, inFlight, errors),
-      );
+      item.items = item.items.map((c) => {
+        if (c && c.type === "ref") return resolveRefNode(c, map, errors);
+        resolveRefs(c, map, errors);
+        return c;
+      });
     }
-    if (item.type === "edge") {
-      delete clone._labelRows;
-      if (item.label)
-        clone.label = cloneResolved(item.label, map, inFlight, errors);
+    if (item.type === "edge" && item.label) {
+      if (item.label.type === "ref") {
+        item.label = resolveRefNode(item.label, map, errors);
+      } else {
+        resolveRefs(item.label, map, errors);
+      }
     }
-    return clone;
   };
 
   const parse = (source) => {
@@ -401,11 +391,11 @@
     const nameMap = new Map();
     const errors = [];
     collectNames(root, nameMap, errors);
-    const resolved = cloneResolved(root, nameMap, new Set(), errors);
+    resolveRefs(root, nameMap, errors);
     if (errors.length) {
-      resolved._errors = [...new Set(errors)];
+      root._errors = [...new Set(errors)];
     }
-    return resolved;
+    return root;
   };
 
   // ---- display width ----------------------------------------------------
