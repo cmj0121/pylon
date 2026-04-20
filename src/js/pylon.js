@@ -22,25 +22,57 @@
 (() => {
   // ---- stub parser ------------------------------------------------------
   // Replace with the real Pylon parser later. For now, any input becomes
-  // a single-box AST:
-  //   [ ... ]   bordered node
-  //   ( ... )   borderless node
-  //   otherwise plain text in a bordered node
-  // Leading and trailing '-' inside the brackets are alignment markers and
-  // are stripped. Empty input falls back to the default example.
+  // a single-box AST with an optional frontmatter block:
+  //   ---
+  //   size:  WxH          # outer dimensions in cells
+  //   theme: IDENT        # reserved -- applied by later commits
+  //   ---
+  //   [ ... ]             # bordered node
+  //   ( ... )             # borderless node
+  // Leading and trailing '-' inside the brackets are alignment markers
+  // and are stripped from the label. Empty input falls back to the
+  // default example.
   const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
 
+  const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
+
+  const parseFrontmatter = (text) => {
+    const meta = {};
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$/);
+      if (!m) continue;
+      const [, key, raw] = m;
+      if (key === "size") {
+        const s = raw.match(/^(\d+)\s*[xX]\s*(\d+)$/);
+        if (s) meta.size = { w: parseInt(s[1], 10), h: parseInt(s[2], 10) };
+      } else if (key === "theme") {
+        meta.theme = raw;
+      }
+    }
+    return meta;
+  };
+
   const parse = (source) => {
-    const raw = (source ?? "").trim() || DEFAULT_EXAMPLE;
+    const src = (source ?? "").trim();
+    if (!src) return parse(DEFAULT_EXAMPLE);
+
+    let meta = {};
+    let body = src;
+    const fm = src.match(FRONTMATTER_RE);
+    if (fm) {
+      meta = parseFrontmatter(fm[1]);
+      body = src.slice(fm[0].length).trim();
+      if (!body) body = DEFAULT_EXAMPLE;
+    }
 
     let bordered = true;
-    let inner = raw;
-    if (raw.startsWith("[") && raw.endsWith("]")) {
+    let inner = body;
+    if (body.startsWith("[") && body.endsWith("]")) {
       bordered = true;
-      inner = raw.slice(1, -1);
-    } else if (raw.startsWith("(") && raw.endsWith(")")) {
+      inner = body.slice(1, -1);
+    } else if (body.startsWith("(") && body.endsWith(")")) {
       bordered = false;
-      inner = raw.slice(1, -1);
+      inner = body.slice(1, -1);
     }
 
     const label = inner
@@ -48,7 +80,7 @@
       .replace(/\s+-\s*$/, "")
       .trim();
 
-    return { type: "box", label, bordered };
+    return { type: "box", label, bordered, meta };
   };
 
   // ---- display width ----------------------------------------------------
@@ -113,6 +145,75 @@
     return w;
   };
 
+  // ---- layout -----------------------------------------------------------
+  // Resolve outer dimensions, padding, and (if needed) a truncated label
+  // from the AST's meta.size. Shared by ASCII / SVG / PNG renderers so the
+  // three backends agree on what they are drawing.
+  //
+  //  - natural-pad  3 cells on each side of the label when no size is set
+  //  - cell -> px   10 wide, 20 tall for SVG / PNG when size *is* set;
+  //                 the legacy auto formula stays in place otherwise, so
+  //                 unsized boxes render at the same size as before
+  const NATURAL_PAD = 3;
+  const CELL_PX_W = 10;
+  const CELL_PX_H = 20;
+
+  const layout = (ast) => {
+    const { label, meta = {} } = ast;
+    const rawLabelW = displayWidth(label);
+    const autoCellsW = rawLabelW + NATURAL_PAD * 2 + 2;
+    const autoCellsH = 3;
+
+    const hasSize = !!meta.size;
+    const outerCellsW = hasSize ? meta.size.w : autoCellsW;
+    const outerCellsH = hasSize ? meta.size.h : autoCellsH;
+
+    // Clip the label by display-width when the user-chosen size cannot
+    // hold it; the border stays at outerCellsW.
+    const maxLabelW = Math.max(0, outerCellsW - 2);
+    let displayLabel = label;
+    if (rawLabelW > maxLabelW) {
+      console.warn(
+        `pylon: label ${JSON.stringify(label)} is wider than size.w=` +
+          `${outerCellsW}; truncating.`,
+      );
+      let w = 0;
+      let out = "";
+      for (const ch of label) {
+        const cw = charWidth(ch.codePointAt(0));
+        if (w + cw > maxLabelW) break;
+        out += ch;
+        w += cw;
+      }
+      displayLabel = out;
+    }
+    const labelW = displayWidth(displayLabel);
+
+    const hSlack = Math.max(0, outerCellsW - 2 - labelW);
+    const leftPad = Math.floor(hSlack / 2);
+    const rightPad = hSlack - leftPad;
+
+    const vSlack = Math.max(0, outerCellsH - 3);
+    const topRows = Math.floor(vSlack / 2);
+    const bottomRows = vSlack - topRows;
+
+    const pxW = hasSize ? outerCellsW * CELL_PX_W : rawLabelW * CELL_PX_W + 32;
+    const pxH = hasSize ? outerCellsH * CELL_PX_H : 48;
+
+    return {
+      outerCellsW,
+      outerCellsH,
+      label: displayLabel,
+      labelW,
+      leftPad,
+      rightPad,
+      topRows,
+      bottomRows,
+      pxW,
+      pxH,
+    };
+  };
+
   // ---- renderers --------------------------------------------------------
   const renderers = {
     ascii(ast) {
@@ -123,21 +224,20 @@
         pre.textContent = label;
         return pre;
       }
-      // Unicode box-drawing glyphs + 3-col horizontal padding. Every
-      // character is placed in its own fixed-width cell so the border
-      // stays aligned regardless of how the browser's fallback font
-      // renders CJK or emoji. The raw text (┌─┐│└┘) is preserved in
-      // the DOM so selecting and copying the output yields usable
-      // ASCII art that can be pasted into a terminal or markdown.
-      const dw = displayWidth(label);
-      const pad = 3;
-      const line = "─".repeat(dw + pad * 2);
-      const sp = " ".repeat(pad);
-      const rows = [
-        "┌" + line + "┐",
-        "│" + sp + label + sp + "│",
-        "└" + line + "┘",
-      ];
+      const L = layout(ast);
+      const barLen = Math.max(0, L.outerCellsW - 2);
+      const line = "─".repeat(barLen);
+      const blank = "│" + " ".repeat(barLen) + "│";
+      const content =
+        "│" + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + "│";
+
+      const rows = ["┌" + line + "┐"];
+      for (let i = 0; i < L.topRows; i++) rows.push(blank);
+      rows.push(content);
+      for (let i = 0; i < L.bottomRows; i++) rows.push(blank);
+      rows.push("└" + line + "┘");
+
+      // Per-cell DOM so CJK / emoji stay aligned regardless of font.
       for (let i = 0; i < rows.length; i++) {
         if (i > 0) pre.append(document.createTextNode("\n"));
         for (const ch of rows[i]) {
@@ -157,10 +257,10 @@
     },
 
     svg(ast) {
-      const { label, bordered } = ast;
-      const dw = displayWidth(label);
-      const w = dw * 10 + 32;
-      const h = 48;
+      const { bordered } = ast;
+      const L = layout(ast);
+      const w = L.pxW;
+      const h = L.pxH;
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg");
       svg.setAttribute("width", w);
@@ -187,17 +287,17 @@
       t.setAttribute("font-family", "monospace");
       t.setAttribute("font-size", "14");
       t.setAttribute("fill", "currentColor");
-      t.textContent = label;
+      t.textContent = L.label;
       svg.append(t);
       return svg;
     },
 
     png(ast, opts = {}) {
-      const { label, bordered } = ast;
+      const { bordered } = ast;
       const color = opts.color || "#000";
-      const dw = displayWidth(label);
-      const w = dw * 10 + 32;
-      const h = 48;
+      const L = layout(ast);
+      const w = L.pxW;
+      const h = L.pxH;
       const dpr = window.devicePixelRatio || 1;
       const canvas = document.createElement("canvas");
       canvas.width = w * dpr;
@@ -221,7 +321,7 @@
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(label, w / 2, h / 2);
+      ctx.fillText(L.label, w / 2, h / 2);
       const img = document.createElement("img");
       img.src = canvas.toDataURL("image/png");
       img.width = w;
@@ -241,16 +341,18 @@
       if (!bordered) {
         return { text: label, mime: "text/plain", ext: "txt" };
       }
-      const dw = displayWidth(label);
-      const pad = 3;
-      const line = "─".repeat(dw + pad * 2);
-      const sp = " ".repeat(pad);
-      const text = [
-        "┌" + line + "┐",
-        "│" + sp + label + sp + "│",
-        "└" + line + "┘",
-      ].join("\n");
-      return { text, mime: "text/plain", ext: "txt" };
+      const L = layout(ast);
+      const barLen = Math.max(0, L.outerCellsW - 2);
+      const line = "─".repeat(barLen);
+      const blank = "│" + " ".repeat(barLen) + "│";
+      const content =
+        "│" + " ".repeat(L.leftPad) + L.label + " ".repeat(L.rightPad) + "│";
+      const rows = ["┌" + line + "┐"];
+      for (let i = 0; i < L.topRows; i++) rows.push(blank);
+      rows.push(content);
+      for (let i = 0; i < L.bottomRows; i++) rows.push(blank);
+      rows.push("└" + line + "┘");
+      return { text: rows.join("\n"), mime: "text/plain", ext: "txt" };
     },
 
     svg(ast) {
@@ -262,11 +364,11 @@
     },
 
     async png(ast, opts = {}) {
-      const { label, bordered } = ast;
+      const { bordered } = ast;
       const color = opts.color || "#000";
-      const dw = displayWidth(label);
-      const w = dw * 10 + 32;
-      const h = 48;
+      const L = layout(ast);
+      const w = L.pxW;
+      const h = L.pxH;
       const dpr = window.devicePixelRatio || 1;
       const canvas = document.createElement("canvas");
       canvas.width = w * dpr;
@@ -288,7 +390,7 @@
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(label, w / 2, h / 2);
+      ctx.fillText(L.label, w / 2, h / 2);
       const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
       return { blob, mime: "image/png", ext: "png" };
     },
