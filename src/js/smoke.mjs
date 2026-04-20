@@ -207,6 +207,9 @@ const fixtures = [
   {
     name: "bar renderer rejects duplicate x values inline",
     src: "---\ndata:\n  - x: a\n    y: 2\n  - x: a\n    y: 10\n---\n[ @data | bar ]",
+    // The error prefix mirrors the renderer name the user actually
+    // typed -- `bar` stays `bar`, it does not leak the `hbar` alias
+    // target.
     expect: (o) => o.includes('⚠ bar: duplicate x "a"') && !o.includes("█"),
   },
   {
@@ -215,11 +218,59 @@ const fixtures = [
     expect: (o) =>
       o.includes("[toast]") && o.includes("Unsupported data: frontmatter"),
   },
+  {
+    name: "vbar renderer draws vertical bars",
+    src: "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n  - x: 3\n    y: 15\n---\n[ @data | vbar ]",
+    expect: (o) => {
+      if (!o.includes("\u2588")) return false;
+      if (!o.includes("(10)") || !o.includes("(20)") || !o.includes("(15)")) {
+        return false;
+      }
+      // x labels "1", "2", "3" on the line above the (y) value row.
+      const lines = o.split("\n");
+      const valLine = lines.findIndex((l) => l.includes("(10)"));
+      if (valLine < 1) return false;
+      const labelLine = lines[valLine - 1];
+      return (
+        labelLine.includes("1") &&
+        labelLine.includes("2") &&
+        labelLine.includes("3")
+      );
+    },
+  },
+  {
+    name: "bar is an alias for hbar",
+    src: null,
+    expect: () => true,
+    // Custom runner: rendered twice, compared.
+    custom: () => {
+      const base =
+        "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n---\n";
+      const a = render(base + "[ @data | bar ]");
+      const b = render(base + "[ @data | hbar ]");
+      return a === b;
+    },
+  },
+  {
+    name: "vbar renderer rejects duplicate x values inline",
+    src: "---\ndata:\n  - x: a\n    y: 2\n  - x: a\n    y: 10\n---\n[ @data | vbar ]",
+    expect: (o) =>
+      o.includes('\u26a0 vbar: duplicate x "a"') && !o.includes("\u2588"),
+  },
 ];
 
 let failed = 0;
 for (const f of fixtures) {
   try {
+    if (f.custom) {
+      if (!f.custom()) {
+        failed++;
+        console.error(`FAIL: ${f.name}`);
+      } else {
+        console.log(`ok  : ${f.name}`);
+      }
+      continue;
+    }
     const out = render(f.src);
     if (!f.expect(out)) {
       failed++;
