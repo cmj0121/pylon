@@ -38,6 +38,7 @@ class VNode {
   removeAttribute(k) {
     delete this.attrs[k];
   }
+  remove() {}
   append(...kids) {
     for (const k of kids) this.children.push(k);
   }
@@ -114,6 +115,9 @@ const render = (src) => {
     out += n._textContent || "";
   };
   for (const c of pre.children) emit(c);
+  // Append any toast text so fixtures can assert on surfaced errors.
+  const toast = el.children?.find((c) => c.className === "pylon-toast");
+  if (toast) out += "\n[toast] " + toast.textContent;
   return out;
 };
 
@@ -162,6 +166,54 @@ const fixtures = [
     src: "---\ntheme: ascii\n---\n[- Hello -]",
     expect: (o) =>
       o.includes("+") && o.includes("|   Hello   |") && !o.includes("┌"),
+  },
+  {
+    name: "text renderer stringifies a resolved @ref",
+    src: "---\ndata:\n  - x: 1\n    y: 10\n---\n[- @data | text -]",
+    expect: (o) => o.includes('[{"x":1,"y":10}]'),
+  },
+  {
+    name: "bar renderer draws horizontal bars with value labels",
+    src: "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n  - x: 3\n    y: 15\n---\n[ @data | bar ]",
+    expect: (o) => {
+      const bars = (o.match(/█/g) || []).length;
+      return (
+        bars >= 12 &&
+        o.includes("(10)") &&
+        o.includes("(20)") &&
+        o.includes("(15)")
+      );
+    },
+  },
+  {
+    name: "bar renderer rejects raw-string input inline",
+    src: "[ hello | bar ]",
+    expect: (o) => o.includes("⚠ bar: use @ref"),
+  },
+  {
+    name: "bar renderer accepts unquoted-string x labels",
+    src: "---\ndata:\n  - x: apples\n    y: 10\n  - x: bananas\n    y: 20\n---\n[ @data | bar ]",
+    expect: (o) => {
+      const bars = (o.match(/█/g) || []).length;
+      return (
+        bars >= 10 &&
+        o.includes("  apples") &&
+        o.includes("bananas") &&
+        o.includes("(10)") &&
+        o.includes("(20)")
+      );
+    },
+  },
+  {
+    name: "bar renderer rejects duplicate x values inline",
+    src: "---\ndata:\n  - x: a\n    y: 2\n  - x: a\n    y: 10\n---\n[ @data | bar ]",
+    expect: (o) => o.includes('⚠ bar: duplicate x "a"') && !o.includes("█"),
+  },
+  {
+    name: "tab-indented data: frontmatter rejects with toast",
+    src: "---\ndata:\n\t- x: 1\n\t  y: 10\n---\n[- @data | text -]",
+    expect: (o) =>
+      o.includes("[toast]") && o.includes("Unsupported data: frontmatter"),
   },
 ];
 
