@@ -16,9 +16,11 @@ run:				# serve the demo at http://localhost:$(PORT)
 	@echo "serving src/js at http://localhost:$(PORT)/ -- press Ctrl-C to stop"
 	@python3 -m http.server $(PORT)
 
-build:				# minify pylon.js into dist/pylon.min.js
+build:				# assemble dist/ (minified JS, CSS, and production index.html)
 	@mkdir -p $(DIST)
 	@npx --yes $(ESBUILD) pylon.js --minify --target=es2020 --outfile=$(DIST)/pylon.min.js
+	@cp pylon.css $(DIST)/
+	@sed 's|pylon\.js|pylon.min.js|' index.html > $(DIST)/index.html
 
 help:				# show this message
 	@printf "Usage: make -C src/js [OPTION]\n"

@@ -78,7 +78,7 @@ Or open `src/js/index.html` directly in a browser.
 ### Build a minified bundle
 
 ```sh
-make -C src/js build          # emits dist/pylon.min.js via `npx esbuild`
+make -C src/js build          # emits dist/{pylon.min.js,pylon.css,index.html}
 ```
 
 ### Embed
