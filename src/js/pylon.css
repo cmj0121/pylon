@@ -1,0 +1,185 @@
+/*
+ * Pylon -- default stylesheet
+ *
+ * Aesthetic: technical drafting notebook. Cream editor surface, faint
+ * graph-paper preview, deep ink-blue accent, monospace throughout.
+ * Adopters can re-skin by overriding the --pylon-* custom properties.
+ */
+
+:root,
+pylon-chart {
+  /* palette */
+  --pylon-ink: #0f1c2d;
+  --pylon-ink-soft: #4a5871;
+  --pylon-paper: #fbf8ef;
+  --pylon-paper-sunk: #f4eeda;
+  --pylon-rule: #d6cbad;
+  --pylon-grid: rgba(15, 28, 45, 0.06);
+  --pylon-accent: #1a4d7a;
+  --pylon-focus-ring: rgba(26, 77, 122, 0.22);
+
+  /* typography */
+  --pylon-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono",
+    Menlo, Consolas, monospace;
+
+  /* shape */
+  --pylon-radius: 2px;
+  --pylon-border: 1px solid var(--pylon-rule);
+  --pylon-gap: 1.25rem;
+  --pylon-pad: 0.875rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  pylon-chart {
+    --pylon-ink: #e6dfc8;
+    --pylon-ink-soft: #95a0b4;
+    --pylon-paper: #171d28;
+    --pylon-paper-sunk: #10151e;
+    --pylon-rule: #2c3342;
+    --pylon-grid: rgba(230, 223, 200, 0.05);
+    --pylon-accent: #7ab3dc;
+    --pylon-focus-ring: rgba(122, 179, 220, 0.28);
+  }
+}
+
+/* ---- element shell -------------------------------------------------- */
+pylon-chart {
+  color: var(--pylon-ink);
+  font-family: var(--pylon-font-mono);
+  display: inline-block;
+}
+
+pylon-chart[wysiwyg] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--pylon-gap);
+  align-items: stretch;
+  width: 100%;
+}
+
+/* ---- editor (left pane) -------------------------------------------- */
+.pylon-editor {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 12rem;
+  padding: var(--pylon-pad);
+  background: var(--pylon-paper);
+  border: var(--pylon-border);
+  border-radius: var(--pylon-radius);
+  color: var(--pylon-ink);
+  font-family: var(--pylon-font-mono);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  caret-color: var(--pylon-accent);
+  resize: vertical;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.pylon-editor::placeholder {
+  color: var(--pylon-ink-soft);
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.pylon-editor:focus {
+  border-color: var(--pylon-accent);
+  box-shadow: 0 0 0 3px var(--pylon-focus-ring);
+}
+
+/* ---- right pane: toolbar + view ------------------------------------ */
+.pylon-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.pylon-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+
+.pylon-format-select {
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--pylon-ink-soft) 50%)
+      calc(100% - 0.95rem) 55% / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--pylon-ink-soft) 50%, transparent 50%)
+      calc(100% - 0.6rem) 55% / 5px 5px no-repeat,
+    var(--pylon-paper);
+  border: var(--pylon-border);
+  border-radius: var(--pylon-radius);
+  color: var(--pylon-ink);
+  font-family: var(--pylon-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.35rem 1.65rem 0.35rem 0.7rem;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.pylon-format-select:hover {
+  border-color: var(--pylon-accent);
+  color: var(--pylon-accent);
+}
+
+.pylon-format-select:focus-visible {
+  outline: none;
+  border-color: var(--pylon-accent);
+  box-shadow: 0 0 0 3px var(--pylon-focus-ring);
+}
+
+/* ---- view pane (drafting surface) ---------------------------------- */
+.pylon-view {
+  flex: 1;
+  min-height: 12rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pylon-pad);
+  background-color: var(--pylon-paper-sunk);
+  background-image: linear-gradient(var(--pylon-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pylon-grid) 1px, transparent 1px);
+  background-size: 1.5rem 1.5rem;
+  background-position: -1px -1px;
+  border: var(--pylon-border);
+  border-radius: var(--pylon-radius);
+  color: var(--pylon-ink);
+  overflow: auto;
+}
+
+/* Non-wysiwyg: the view is not a preview surface, just inline output. */
+pylon-chart:not([wysiwyg]) .pylon-view {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+/* ---- renderers ----------------------------------------------------- */
+.pylon-ascii {
+  margin: 0;
+  font-family: var(--pylon-font-mono);
+  font-size: 0.95rem;
+  line-height: 1.2;
+  white-space: pre;
+  color: var(--pylon-ink);
+}
+
+.pylon-svg,
+.pylon-png {
+  display: block;
+  max-width: 100%;
+  color: var(--pylon-ink);
+}
