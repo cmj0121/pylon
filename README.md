@@ -186,9 +186,34 @@ Named nodes and references:
 
 - `[ value :: name ]` — declare a node named `name`. The trailing `::` + identifier is stripped from the rendered
   label and attached to the AST. Applies to `(...)` as well.
-- `&name` — reference a previously declared node. A reference is a pointer, not a copy: it renders as the name
-  itself (inline text), so the declaration remains the only place the full content appears. Works in flow chains
-  (`[ A ] -> &name`) or as a standalone stacked item.
+- `&name` — reference a previously declared node. References are pointers, not copies: the declaration is the
+  only place the full box is drawn. How a reference renders depends on where the declaration lives:
+
+  - **Same row, adjacent** (e.g. `[ a :: b ] -> &b`) — drawn as a self-loop arc under the declaration.
+
+    ```txt
+    ┌───────┐
+    │   a   │
+    └───────┘
+      │   ▲
+      └───┘
+    ```
+
+  - **Different row** (e.g. `[ a :: b ]` on one line, `[ c ] -> &b` on the next) — drawn as an arrow through a
+    right-side gutter that loops back to the declaration.
+
+    ```txt
+    ┌───────┐
+    │   a   │◀────┐
+    └───────┘     │
+    ┌───────┐     │
+    │   c   │─────┘
+    └───────┘
+    ```
+
+  - **Anywhere else** (nested refs, second ref to an already-gutter-routed target, etc.) — the reference falls
+    back to the plain name as inline text.
+
 - Duplicate declarations and unresolved references surface as a toast inside the `<pylon-chart>` element
   (no native `alert`).
 
