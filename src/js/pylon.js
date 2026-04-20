@@ -317,12 +317,42 @@
     }
   };
 
-  // Rewrite each `ref` node in place as inline text that displays the
-  // referenced name. The declaration is the only visual instance of
-  // the node's content; references just point back at it by name.
-  // Unresolved references still render the literal `&name` so the
-  // author can see where the broken pointer is.
-  const resolveRefNode = (ref, map, errors) => {
+  // Resolve `ref` nodes. Two paths:
+  //
+  //   1. Same-row self-loop: when a row contains the adjacent triple
+  //      `[decl :: name] <edge> &name`, the ref is tagged as a self-
+  //      loop anchored on the declaration. The row renderer draws a
+  //      U-shaped arc under the declaration and omits the edge + ref
+  //      from the linear layout.
+  //
+  //   2. Inline text: any other ref (cross-row, no matching decl,
+  //      not adjacent to the decl's edge) resolves to the name as
+  //      plain text -- a textual pointer, not a new box.
+  //
+  // Unresolved references emit an error and render the literal
+  // `&name` so the broken pointer is visible.
+  const tagSelfLoopsOnRow = (row) => {
+    const items = row.items;
+    for (let i = 0; i + 2 < items.length; i++) {
+      const decl = items[i];
+      const edge = items[i + 1];
+      const ref = items[i + 2];
+      if (
+        decl?.type === "box" &&
+        decl.name &&
+        edge?.type === "edge" &&
+        ref?.type === "ref" &&
+        ref.name === decl.name
+      ) {
+        ref.selfLoop = true;
+        ref.target = decl;
+        ref.edge = edge;
+        edge._consumedBySelfLoop = true;
+      }
+    }
+  };
+
+  const resolveRefText = (ref, map, errors) => {
     if (!map.has(ref.name)) {
       errors.push(`Undefined ref: &${ref.name}`);
       return { type: "text", content: "&" + ref.name };
@@ -332,16 +362,20 @@
 
   const resolveRefs = (item, map, errors) => {
     if (!item || typeof item !== "object") return;
+    if (item.type === "row") tagSelfLoopsOnRow(item);
     if (Array.isArray(item.items)) {
       item.items = item.items.map((c) => {
-        if (c && c.type === "ref") return resolveRefNode(c, map, errors);
+        if (c && c.type === "ref") {
+          if (c.selfLoop) return c;
+          return resolveRefText(c, map, errors);
+        }
         resolveRefs(c, map, errors);
         return c;
       });
     }
     if (item.type === "edge" && item.label) {
       if (item.label.type === "ref") {
-        item.label = resolveRefNode(item.label, map, errors);
+        item.label = resolveRefText(item.label, map, errors);
       } else {
         resolveRefs(item.label, map, errors);
       }
@@ -591,14 +625,26 @@
   // instead of being clipped to fit the frame. Labelled edges keep
   // their label inline on its own row next to the arrow.
   const renderRowRows = (row, bc, maxW) => {
-    const parts = row.items.map((it) => {
+    // Self-loop refs and the edge that led into them are drawn as an
+    // arc beneath the declaration, not placed linearly.
+    const linearItems = row.items.filter(
+      (it) =>
+        !(it && it.type === "ref" && it.selfLoop) && !it._consumedBySelfLoop,
+    );
+    const parts = linearItems.map((it) => {
       if (it.type === "edge") {
         const text = edgeString(it, bc);
-        return { kind: "edge", edge: it, text, width: displayWidth(text) };
+        return {
+          kind: "edge",
+          edge: it,
+          text,
+          width: displayWidth(text),
+          item: it,
+        };
       }
       const rows = renderItemRows(it, bc);
       const width = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
-      return { kind: "block", rows, width };
+      return { kind: "block", rows, width, item: it };
     });
 
     const totalWidth = parts.reduce((sum, p) => sum + p.width, 0);
@@ -634,6 +680,35 @@
       let line = "";
       for (const col of columns) line += col[r];
       out.push(line);
+    }
+
+    // Append U-loop rows under each self-loop's target box. Arms sit
+    // two cells inside the left and right edges of the target, so a
+    // 9-wide `[ a ]` box gets a loop spanning cols 2..6 of that block.
+    const selfLoops = row.items.filter(
+      (it) => it && it.type === "ref" && it.selfLoop,
+    );
+    if (selfLoops.length > 0 && totalWidth > 0) {
+      for (const ref of selfLoops) {
+        const idx = parts.findIndex(
+          (p) => p.kind === "block" && p.item === ref.target,
+        );
+        if (idx < 0) continue;
+        const startCol = parts.slice(0, idx).reduce((s, p) => s + p.width, 0);
+        const boxW = parts[idx].width;
+        const armL = 2;
+        const armR = boxW - 3;
+        if (armR <= armL) continue;
+        const row1 = new Array(totalWidth).fill(" ");
+        const row2 = new Array(totalWidth).fill(" ");
+        row1[startCol + armL] = bc.v;
+        row1[startCol + armR] = "▲";
+        row2[startCol + armL] = bc.bl;
+        for (let c = armL + 1; c < armR; c++) row2[startCol + c] = bc.h;
+        row2[startCol + armR] = bc.br;
+        out.push(row1.join(""));
+        out.push(row2.join(""));
+      }
     }
     return out;
   };
