@@ -159,6 +159,49 @@ Or open `src/js/index.html` directly in a browser.
 Attributes: `format="ascii|svg|png"` (default `ascii`), `src` (source, alternative to child text), `wysiwyg` (flag).
 All colors, spacing, fonts, and shape are themeable via `--pylon-*` custom properties in `pylon.css`.
 
+### Syntax the JS library understands today
+
+Nodes:
+
+- `[ label ]` bordered node.
+- `( label )` borderless node (transparent wrapper; children flow into the parent).
+- A node body may contain text lines, nested nodes, or a flow chain; lines stack vertically.
+
+Alignment inside a node (dash must be flush with the bracket):
+
+- `[ x ]` or `[- x -]` — centered (default).
+- `[- x ]` — right-aligned (left spring pushes content right).
+- `[ x -]` — left-aligned.
+
+Flow chains (siblings on a single line, connected by edges):
+
+- `[ A ] -> [ B ]` right arrow.
+- `[ A ] <- [ B ]` left arrow.
+- `[ A ] <-> [ B ]` bidirectional.
+- `[ A ] --> [ B ]`, `[ A ] ---> [ B ]`, ... longer edge lines (any `<?-+>?` with at least one arrow).
+- `[ Alice ] -- ( friend ) --> [ Bob ]` — labelled edge. The label is any borderless node written between the two
+  edge halves; bidirectional `<-- ( role ) -->` and reverse `<-- ( role ) --` also work.
+
+Frontmatter (YAML-subset, at the head of the source, fenced by `---`):
+
+```pylon
+---
+size: 30x5                    # outer dimensions in cells
+theme: simple | ascii | dark | light
+---
+[- Hello -]
+```
+
+`size` forces outer width / height and centers content; `theme` swaps the palette (or switches the ASCII backend
+to plain `+-|` glyphs when `ascii`). Both are optional.
+
+Multiple top-level nodes stack vertically:
+
+```pylon
+[Hello]
+(World)
+```
+
 ## DDD (Dream-Driven Development)
 
 This project follows the DDD (Dream-Driven Development) methodology, which means the project
