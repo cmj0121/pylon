@@ -33,6 +33,11 @@
   // and are stripped from the label. Empty input falls back to the
   // default example.
   const DEFAULT_EXAMPLE = "[- Pylon WYSIWYG -]";
+  // Default outer dimensions when the author hasn't declared a size
+  // in the frontmatter. Chosen to match the WYSIWYG preview pane and
+  // to give flow chains a generous canvas before the auto-wrap-to-
+  // vertical kicks in.
+  const DEFAULT_SIZE = { w: 60, h: 40 };
 
   const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
@@ -88,17 +93,107 @@
     return { align, clean };
   };
 
+  // Flow-edge tokens recognised between sibling nodes on the same line:
+  //
+  //   ->         length=1 right
+  //   <-         length=1 left
+  //   <->        length=1 bidirectional
+  //   -->        length=2 right
+  //   <-->       length=2 bidirectional  (arrow on both sides)
+  //   --->       length=3 right
+  //   ...and so on. The general form is <?-+>? with at least one arrow.
+  //   Pure dashes with no arrow head stay as literal text (the labelled
+  //   edge form '-- ( label ) -->' lands in a later commit).
+  //
+  // Note on '-': inside brackets flush with the wall (e.g. '[- x -]') a
+  // lone dash is an alignment spring (unchanged). Between siblings on a
+  // line, '-' is an edge-line fragment and never aligns. The older
+  // README hint of "'-' defines alignment between nodes" is dropped --
+  // alignment between nodes is not a DSL feature.
+  const EDGE_RE = /^<?-+>?/;
+
+  // Post-pass over a line's items to stitch a labelled-edge pattern:
+  //
+  //   [ A ] -- ( friend ) --> [ B ]
+  //         ^^^^^^^^^^^^^^^^^^^^^^ three tokens merged into one edge
+  //
+  // The pattern is (dashes-only-text OR edge) + borderless-node + (dashes-only-text OR edge).
+  // At least one of the outer pieces must be an arrow-bearing edge,
+  // otherwise there is no direction (just dashes around a label is
+  // ambiguous and we leave it as text).
+  const DASH_ONLY_RE = /^-+$/;
+  const stitchLabeledEdges = (items) => {
+    const out = [];
+    let i = 0;
+    const isDashes = (x) =>
+      x && x.type === "text" && DASH_ONLY_RE.test(x.content);
+    const isEdge = (x) => x && x.type === "edge";
+    const isBorderlessBox = (x) =>
+      x && x.type === "box" && x.bordered === false;
+    while (i < items.length) {
+      const a = items[i];
+      const b = items[i + 1];
+      const c = items[i + 2];
+      if (
+        (isDashes(a) || isEdge(a)) &&
+        isBorderlessBox(b) &&
+        (isDashes(c) || isEdge(c)) &&
+        (isEdge(a) || isEdge(c))
+      ) {
+        const hasL =
+          isEdge(a) && (a.direction === "left" || a.direction === "both");
+        const hasR =
+          isEdge(c) && (c.direction === "right" || c.direction === "both");
+        const direction = hasL && hasR ? "both" : hasL ? "left" : "right";
+        const leftLen = a.type === "text" ? a.content.length : a.length;
+        const rightLen = c.type === "text" ? c.content.length : c.length;
+        out.push({
+          type: "edge",
+          direction,
+          leftLen,
+          rightLen,
+          label: b,
+        });
+        i += 3;
+        continue;
+      }
+      out.push(a);
+      i++;
+    }
+    return out;
+  };
+
   // Split the inner content of a box into an ordered list of items.
-  // Items are either child nodes or text runs; newlines break text into
-  // separate items so multi-line content stacks vertically.
+  // Items are child nodes, text runs, edge tokens, or -- when a source
+  // line contains at least one edge and two or more other items -- a
+  // row wrapper that groups the line's items for horizontal layout.
+  // Newlines separate items vertically.
   const parseItems = (s) => {
     const items = [];
+    let lineItems = [];
     let textBuf = "";
+
     const flushText = () => {
       const t = textBuf.trim();
-      if (t) items.push({ type: "text", content: t });
+      if (t) lineItems.push({ type: "text", content: t });
       textBuf = "";
     };
+
+    const flushLine = () => {
+      flushText();
+      if (lineItems.length === 0) return;
+      lineItems = stitchLabeledEdges(lineItems);
+      const hasEdge = lineItems.some((it) => it.type === "edge");
+      if (hasEdge) {
+        items.push({ type: "row", items: lineItems });
+      } else {
+        // No edge on this line -- flatten items into the parent stack
+        // so existing vertical-stack behaviour is preserved.
+        for (const it of lineItems) items.push(it);
+      }
+      lineItems = [];
+    };
+
     let i = 0;
     while (i < s.length) {
       const c = s[i];
@@ -106,22 +201,41 @@
         flushText();
         const end = findMatching(s, i);
         if (end < 0) {
-          // Unmatched: swallow as literal text so parsing stays lenient.
           textBuf += c;
           i++;
           continue;
         }
-        items.push(parseBracketedNode(s.slice(i, end + 1)));
+        lineItems.push(parseBracketedNode(s.slice(i, end + 1)));
         i = end + 1;
       } else if (c === "\n") {
-        flushText();
+        flushLine();
+        i++;
+      } else if (c === "<" || c === "-") {
+        const match = s.slice(i).match(EDGE_RE);
+        const token = match ? match[0] : "";
+        const hasLeft = token.startsWith("<");
+        const hasRight = token.endsWith(">");
+        if (token && (hasLeft || hasRight)) {
+          flushText();
+          const dashes = token.length - (hasLeft ? 1 : 0) - (hasRight ? 1 : 0);
+          const direction =
+            hasLeft && hasRight ? "both" : hasRight ? "right" : "left";
+          lineItems.push({
+            type: "edge",
+            direction,
+            length: Math.max(1, dashes),
+          });
+          i += token.length;
+          continue;
+        }
+        textBuf += c;
         i++;
       } else {
         textBuf += c;
         i++;
       }
     }
-    flushText();
+    flushLine();
     return items;
   };
 
@@ -170,29 +284,24 @@
     //
     // parses as two top-level items. When the user writes exactly one
     // bracketed node we use it directly so SVG / PNG can paint a real
-    // vector rect; when they write more than one we wrap in the
-    // implicit borderless root.
+    // vector rect; for anything else (bare text, a row of chained
+    // nodes, or multiple items) we wrap in the implicit root. Bare
+    // single text gets a bordered wrap for the legacy "type some text
+    // and get a box" behaviour; everything else is borderless.
     const items = parseItems(body);
     let root;
     if (items.length === 1 && items[0].type === "box") {
       root = items[0];
-    } else if (items.length === 1) {
-      // Single bare text run: keep the legacy implicit-bordered wrap
-      // so bare labels still render with a box.
-      root = {
-        type: "box",
-        bordered: true,
-        align: "center",
-        items,
-      };
     } else {
+      const bareText = items.length === 1 && items[0].type === "text";
       root = {
         type: "box",
-        bordered: false,
+        bordered: bareText,
         align: "center",
         items,
       };
     }
+    if (!meta.size) meta.size = { ...DEFAULT_SIZE };
     root.meta = meta;
     return root;
   };
@@ -321,11 +430,147 @@
     ];
   };
 
-  // Render an item (text or box) to its natural rows.
-  const renderItemRows = (item, bc) => {
+  // Render an item to its natural rows. Rows (horizontal chains) and
+  // edges are lowered inside renderRowRows; they do not appear standalone.
+  // When `maxW` is passed, a row wider than `maxW` wraps at item
+  // boundaries into multiple stacked sub-rows.
+  const renderItemRows = (item, bc, maxW) => {
     if (item.type === "text") return [item.content];
     if (item.type === "box") return renderBoxRows(item, bc);
+    if (item.type === "row") return renderRowRows(item, bc, maxW);
     return [];
+  };
+
+  // Direction booleans for an edge. `head` is the rightward arrow
+  // head (shown at the target end of a '→' or below a vertical '▼');
+  // `tail` is the leftward arrow head.
+  const edgeHeads = (direction) => ({
+    head: direction === "right" || direction === "both",
+    tail: direction === "left" || direction === "both",
+  });
+
+  // Render an edge's label rows on first access and cache them on the
+  // edge node so the horizontal and vertical paths don't re-invoke
+  // renderBoxRows for the same label.
+  const labelRowsOf = (edge, bc) => {
+    if (!edge._labelRows) edge._labelRows = renderBoxRows(edge.label, bc);
+    return edge._labelRows;
+  };
+
+  // Format the text form of an edge token. Edges render at a fixed
+  // length regardless of how many dashes the author typed, so '->',
+  // '-->', and '--->' all produce the same arrow. Labelled edges use
+  // two dashes on each side of the label so it breathes against the
+  // adjacent box borders; unlabelled edges use a single dash plus the
+  // arrow head.
+  const edgeString = (edge, bc) => {
+    const { head, tail } = edgeHeads(edge.direction);
+    const leftArrow = tail ? bc.arrowL : "";
+    const rightArrow = head ? bc.arrowR : "";
+    if (edge.label) {
+      const labelText = labelRowsOf(edge, bc)[0] ?? "";
+      const dashes = bc.h.repeat(2);
+      const pad = "  "; // two spaces on each side so the label breathes
+      return leftArrow + dashes + pad + labelText + pad + dashes + rightArrow;
+    }
+    return leftArrow + bc.h + rightArrow;
+  };
+
+  // Render a row (horizontal chain of node / edge items) to display
+  // rows. Node items render to their own rows; shorter nodes get
+  // blank-row padding so every column shares the row's tallest
+  // height; edges are placed on the midline row and blank strings on
+  // the others.
+  //
+  // When `maxW` is given (the containing box has an explicit
+  // meta.size.w) AND the horizontal layout would overflow, the row
+  // rotates 90° -- nodes stack vertically, edges become down / up
+  // arrows centered over the widest node's column. A long
+  // '[A]->[B]->[C]->[D]' becomes
+  //
+  //   [A]
+  //    ▼
+  //   [B]
+  //    ▼
+  //   [C]
+  //    ▼
+  //   [D]
+  //
+  // instead of being clipped to fit the frame. Labelled edges keep
+  // their label inline on its own row next to the arrow.
+  const renderRowRows = (row, bc, maxW) => {
+    const parts = row.items.map((it) => {
+      if (it.type === "edge") {
+        const text = edgeString(it, bc);
+        return { kind: "edge", edge: it, text, width: displayWidth(text) };
+      }
+      const rows = renderItemRows(it, bc);
+      const width = rows.reduce((m, r) => Math.max(m, displayWidth(r)), 0);
+      return { kind: "block", rows, width };
+    });
+
+    const totalWidth = parts.reduce((sum, p) => sum + p.width, 0);
+    if (maxW !== undefined && totalWidth > maxW) {
+      return renderVerticalChain(parts, bc);
+    }
+
+    const h = parts.reduce(
+      (m, p) => (p.kind === "block" ? Math.max(m, p.rows.length) : m),
+      1,
+    );
+    const midline = Math.floor((h - 1) / 2);
+    const columns = parts.map((p) => {
+      if (p.kind === "edge") {
+        const blank = " ".repeat(p.width);
+        return Array.from({ length: h }, (_, r) =>
+          r === midline ? p.text : blank,
+        );
+      }
+      const blank = " ".repeat(p.width);
+      const padded = p.rows.map((r) => padRow(r, p.width, "left"));
+      const extra = h - padded.length;
+      const top = Math.floor(extra / 2);
+      const bot = extra - top;
+      return [
+        ...new Array(top).fill(blank),
+        ...padded,
+        ...new Array(bot).fill(blank),
+      ];
+    });
+    const out = [];
+    for (let r = 0; r < h; r++) {
+      let line = "";
+      for (const col of columns) line += col[r];
+      out.push(line);
+    }
+    return out;
+  };
+
+  // Vertical-chain fallback for overflowing rows. Each node's own
+  // rows are centered within the widest node's column; each edge
+  // turns into a 1-or-3-row run carrying a down / up / both arrow
+  // and, when present, the edge label.
+  const renderVerticalChain = (parts, bc) => {
+    const blocks = parts.filter((p) => p.kind === "block");
+    if (blocks.length === 0) return [];
+    const maxW = blocks.reduce((m, p) => Math.max(m, p.width), 1);
+    const result = [];
+    for (const p of parts) {
+      if (p.kind === "block") {
+        for (const r of p.rows) result.push(padRow(r, maxW, "center"));
+        continue;
+      }
+      const { head: down, tail: up } = edgeHeads(p.edge.direction);
+      // Top row carries the arrow head for an upward edge, otherwise
+      // a '│' continuing the line down from the previous node. Bottom
+      // row mirrors that for a downward edge.
+      result.push(padRow(up ? "▲" : "│", maxW, "center"));
+      if (p.edge.label) {
+        result.push(padRow(labelRowsOf(p.edge, bc)[0] ?? "", maxW, "center"));
+      }
+      result.push(padRow(down ? "▼" : "│", maxW, "center"));
+    }
+    return result;
   };
 
   // Render a box AST to a flat array of rows. When targetW / targetH are
@@ -341,15 +586,26 @@
   const renderBoxRows = (ast, bc, { targetW, targetH } = {}) => {
     const { items = [], align = "center", bordered } = ast;
 
-    const itemRows = items.flatMap((it) => renderItemRows(it, bc));
+    const hasPad = bordered || items.length > 1;
+    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    const borderBudget = bordered ? 2 : 0;
+
+    // When targetW is set we pass maxW down to any row items so a long
+    // flow chain wraps at item boundaries to fit the sized frame. The
+    // maxW is the inside of the final frame, minus the natural side
+    // padding so the wrapped chunks don't touch the border wall.
+    const sizedContentW =
+      targetW !== undefined
+        ? Math.max(1, targetW - borderBudget - (hasPad ? 2 * NATURAL_PAD : 0))
+        : undefined;
+
+    const itemRows = items.flatMap((it) =>
+      renderItemRows(it, bc, sizedContentW),
+    );
     const naturalContentW = itemRows.reduce(
       (max, r) => Math.max(max, displayWidth(r)),
       1,
     );
-
-    const hasPad = bordered || items.length > 1;
-    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
-    const borderBudget = bordered ? 2 : 0;
 
     const naturalOuterW = naturalContentW + padBudget + borderBudget;
     const naturalOuterH = itemRows.length + borderBudget;
@@ -451,8 +707,23 @@
     br: "┘",
     h: "─",
     v: "│",
+    // Filled triangle arrowheads (U+25C0 / U+25B6). Bold, immediately
+    // readable as arrows; render with a small gap before the '│'
+    // border of the next node in some fonts, which the project
+    // accepts as a style trade-off.
+    arrowL: "◀",
+    arrowR: "▶",
   };
-  const ASCII_BOX = { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|" };
+  const ASCII_BOX = {
+    tl: "+",
+    tr: "+",
+    bl: "+",
+    br: "+",
+    h: "-",
+    v: "|",
+    arrowL: "<",
+    arrowR: ">",
+  };
   const boxChars = (ast) =>
     ast.meta?.theme === "ascii" ? ASCII_BOX : UNICODE_BOX;
 
@@ -520,6 +791,12 @@
         t.setAttribute("dominant-baseline", "middle");
         t.setAttribute("font-family", "monospace");
         t.setAttribute("font-size", FONT_SIZE_PX);
+        // SVG2 deprecates xml:space; modern browsers look at the CSS
+        // white-space property to keep runs of spaces from collapsing.
+        // Without this, rows that differ in leading-whitespace (e.g.
+        // "(a) -> [b]" where row 0 is padding+box and row 1 starts
+        // with the label) slide left and the box borders misalign.
+        t.setAttribute("style", "white-space: pre");
         t.setAttribute("xml:space", "preserve");
         t.setAttribute("fill", "currentColor");
         t.textContent = paintableBody(ast, rows[i]);
