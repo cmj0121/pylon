@@ -51,26 +51,116 @@
     return { type: "box", label, bordered };
   };
 
+  // ---- display width ----------------------------------------------------
+  // Count terminal/monospace-column width so borders line up when the
+  // label contains CJK, fullwidth punctuation, or emoji. Based on the
+  // Unicode East Asian Width property: the wide ranges listed here count
+  // as 2, zero-width ranges (combining marks, variation selectors,
+  // zero-width joiners) count as 0, everything else counts as 1.
+  // Compound emoji (ZWJ sequences, flags, skin-tone modifiers) are
+  // counted conservatively wide -- the box may come out a cell loose.
+  const EAW_WIDE = [
+    [0x1100, 0x115f],
+    [0x2329, 0x232a],
+    [0x2e80, 0x303e],
+    [0x3041, 0x33ff],
+    [0x3400, 0x4dbf],
+    [0x4e00, 0x9fff],
+    [0xa000, 0xa4cf],
+    [0xac00, 0xd7a3],
+    [0xf900, 0xfaff],
+    [0xfe30, 0xfe4f],
+    [0xff00, 0xff60],
+    [0xffe0, 0xffe6],
+    [0x1f300, 0x1f64f],
+    [0x1f680, 0x1f6ff],
+    [0x1f900, 0x1f9ff],
+    [0x20000, 0x2fffd],
+    [0x30000, 0x3fffd],
+  ];
+
+  const EAW_ZERO = [
+    [0x0300, 0x036f],
+    [0x0483, 0x0489],
+    [0x1ab0, 0x1aff],
+    [0x1dc0, 0x1dff],
+    [0x200b, 0x200f],
+    [0x2028, 0x202e],
+    [0x20d0, 0x20ff],
+    [0xfe00, 0xfe0f],
+    [0xfe20, 0xfe2f],
+    [0xfeff, 0xfeff],
+  ];
+
+  const inRanges = (cp, ranges) => {
+    for (const [lo, hi] of ranges) {
+      if (cp < lo) return false;
+      if (cp <= hi) return true;
+    }
+    return false;
+  };
+
+  const charWidth = (cp) => {
+    if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return 0;
+    if (inRanges(cp, EAW_ZERO)) return 0;
+    if (inRanges(cp, EAW_WIDE)) return 2;
+    return 1;
+  };
+
+  const displayWidth = (str) => {
+    let w = 0;
+    for (const ch of str) w += charWidth(ch.codePointAt(0));
+    return w;
+  };
+
   // ---- renderers --------------------------------------------------------
   const renderers = {
     ascii(ast) {
       const { label, bordered } = ast;
       const pre = document.createElement("pre");
       pre.className = "pylon-ascii";
-      if (bordered) {
-        const border = "+" + "-".repeat(label.length + 2) + "+";
-        const body = "| " + label + " |";
-        pre.textContent = [border, body, border].join("\n");
-      } else {
+      if (!bordered) {
         pre.textContent = label;
+        return pre;
+      }
+      // Unicode box-drawing glyphs + 3-col horizontal padding. Every
+      // character is placed in its own fixed-width cell so the border
+      // stays aligned regardless of how the browser's fallback font
+      // renders CJK or emoji. The raw text (┌─┐│└┘) is preserved in
+      // the DOM so selecting and copying the output yields usable
+      // ASCII art that can be pasted into a terminal or markdown.
+      const dw = displayWidth(label);
+      const pad = 3;
+      const line = "─".repeat(dw + pad * 2);
+      const sp = " ".repeat(pad);
+      const rows = [
+        "┌" + line + "┐",
+        "│" + sp + label + sp + "│",
+        "└" + line + "┘",
+      ];
+      for (let i = 0; i < rows.length; i++) {
+        if (i > 0) pre.append(document.createTextNode("\n"));
+        for (const ch of rows[i]) {
+          const cw = charWidth(ch.codePointAt(0));
+          if (cw === 0) {
+            pre.append(document.createTextNode(ch));
+            continue;
+          }
+          const cell = document.createElement("span");
+          cell.className = "pylon-ascii-cell";
+          cell.style.width = cw + "ch";
+          cell.textContent = ch;
+          pre.append(cell);
+        }
       }
       return pre;
     },
 
     svg(ast) {
       const { label, bordered } = ast;
-      const w = label.length * 10 + 24;
-      const h = 44;
+      const dw = displayWidth(label);
+      const w = dw * 10 + 32;
+      const h = 48;
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg");
       svg.setAttribute("width", w);
@@ -83,6 +173,7 @@
         rect.setAttribute("y", 1);
         rect.setAttribute("width", w - 2);
         rect.setAttribute("height", h - 2);
+        rect.setAttribute("rx", 3);
         rect.setAttribute("fill", "none");
         rect.setAttribute("stroke", "currentColor");
         rect.setAttribute("stroke-width", "1");
@@ -104,8 +195,9 @@
     png(ast, opts = {}) {
       const { label, bordered } = ast;
       const color = opts.color || "#000";
-      const w = label.length * 10 + 24;
-      const h = 44;
+      const dw = displayWidth(label);
+      const w = dw * 10 + 32;
+      const h = 48;
       const dpr = window.devicePixelRatio || 1;
       const canvas = document.createElement("canvas");
       canvas.width = w * dpr;
@@ -117,7 +209,13 @@
       if (bordered) {
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = color;
-        ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(0.75, 0.75, w - 1.5, h - 1.5, 3);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+        }
       }
       ctx.fillStyle = color;
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";

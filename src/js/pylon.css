@@ -18,9 +18,24 @@ pylon-chart {
   --pylon-accent: #1a4d7a;
   --pylon-focus-ring: rgba(26, 77, 122, 0.22);
 
-  /* typography */
-  --pylon-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono",
-    Menlo, Consolas, monospace;
+  /* typography
+   *
+   * Font priority:
+   *   1. Terminal-grade monospace fonts with flush box-drawing glyphs
+   *      (Cascadia, JetBrains Mono, Iosevka, Hack). These render
+   *      ┌─┐│└┘ edge-to-edge so the character border looks clean.
+   *   2. CJK-dual-width fonts (Sarasa Mono, Noto Sans Mono CJK).
+   *      CJK glyphs in these render at exactly 2x the Latin width.
+   *      Also used for CJK fallback when the terminal font lacks CJK.
+   *   3. Generic system monospace fallbacks.
+   *
+   * Install any of Cascadia Code or Sarasa Mono for best results.
+   */
+  --pylon-font-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono",
+    "Iosevka", "Hack", "Sarasa Mono SC", "Sarasa Mono TC", "Sarasa Mono J",
+    "Source Han Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK TC",
+    "MS Gothic", "Osaka-Mono", ui-monospace, "SF Mono", "IBM Plex Mono", Menlo,
+    Consolas, monospace;
 
   /* shape */
   --pylon-radius: 2px;
@@ -172,9 +187,25 @@ pylon-chart:not([wysiwyg]) .pylon-view {
   margin: 0;
   font-family: var(--pylon-font-mono);
   font-size: 0.95rem;
-  line-height: 1.2;
+  /* line-height 1 keeps the │ glyphs on consecutive rows touching
+     each other vertically. Any larger value leaves a visible gap at
+     the left/right walls of the box. */
+  line-height: 1;
   white-space: pre;
   color: var(--pylon-ink);
+  font-kerning: none;
+  letter-spacing: 0;
+}
+
+/* Each character of a bordered ASCII box lives in a fixed-width cell
+   so borders stay aligned even when the browser's fallback font
+   renders CJK glyphs at a non-2x ratio. Width is set inline per cell
+   (1ch for narrow, 2ch for wide). The raw glyphs stay in the DOM so
+   copying the selection yields terminal-usable characters. */
+.pylon-ascii-cell {
+  display: inline-block;
+  text-align: center;
+  vertical-align: baseline;
 }
 
 .pylon-svg,
