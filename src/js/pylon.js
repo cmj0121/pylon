@@ -1193,14 +1193,10 @@
   // A `| renderer` marker on a box body routes rendering through this
   // table (distinct from the top-level `renderers` map, which is the
   // output backend -- ASCII / SVG / PNG). Each chart renderer takes
-  // the box, its items, the resolved data ref value (if any), and the
-  // theme's box-drawing chars, and returns an array of text strings
-  // that REPLACE the box's items (one text item per row).
-  //
-  // Resolution happens in `resolveChartRenderer` below -- it inspects
-  // the box's items, finds the single dataRef / literal text, looks
-  // it up against `ast.meta.data`, and dispatches. Errors short-
-  // circuit to a single inline `⚠ ...` row.
+  // the resolved data ref value and the theme's box-drawing chars,
+  // and returns an array of text strings that REPLACE the box's items
+  // (one text item per row). Errors short-circuit to a single inline
+  // `⚠ ...` row.
   const BAR_WIDTH_DEFAULT = 10;
   const BAR_HEIGHT_DEFAULT = 10;
   const BAR_GLYPH = "\u2588";
@@ -1208,8 +1204,7 @@
   // Shared validation for bar-family renderers (hbar, vbar). Returns an
   // inline-error row array on failure or `null` on success. `name` is
   // the invoked renderer name so the error text carries it.
-  const validateBarSeries = (refValue, hasRef, name) => {
-    if (!hasRef) return [`\u26a0 ${name}: use @ref`];
+  const validateBarSeries = (refValue, name) => {
     if (!Array.isArray(refValue)) {
       return [`\u26a0 ${name}: expected [{x,y}]`];
     }
@@ -1235,19 +1230,34 @@
     return null;
   };
 
+  // Single pass over the series: collect label / value strings and
+  // track max label width, max value width, and max y. Callers use
+  // this instead of five separate reduce passes.
+  const prepareBarSeries = (refValue) => {
+    const labels = [];
+    const values = [];
+    let labelW = 0;
+    let valueW = 0;
+    let maxY = 0;
+    for (const e of refValue) {
+      const lab = String(e.x);
+      const val = `(${e.y})`;
+      labels.push(lab);
+      values.push(val);
+      if (lab.length > labelW) labelW = lab.length;
+      if (val.length > valueW) valueW = val.length;
+      if (e.y > maxY) maxY = e.y;
+    }
+    return { labels, values, labelW, valueW, maxY };
+  };
+
   // Horizontal-bar body shared by the `hbar` renderer and its `bar`
   // alias. `name` is threaded through so validation errors carry the
   // renderer name the user actually invoked.
-  const renderHBar = (box, items, refValue, hasRef, bc, budgetW, name) => {
-    const err = validateBarSeries(refValue, hasRef, name);
+  const renderHBar = (refValue, bc, budgetW, name) => {
+    const err = validateBarSeries(refValue, name);
     if (err) return err;
-    // Left labels (the `x` column). Pad to a uniform width so every
-    // row's separator lines up.
-    const labels = refValue.map((e) => String(e.x));
-    const labelW = labels.reduce((m, s) => Math.max(m, s.length), 0);
-    const values = refValue.map((e) => `(${e.y})`);
-    const valueW = values.reduce((m, s) => Math.max(m, s.length), 0);
-    const maxY = refValue.reduce((m, e) => Math.max(m, e.y), 0);
+    const { labels, values, labelW, valueW, maxY } = prepareBarSeries(refValue);
     const budget = Math.max(1, budgetW ?? BAR_WIDTH_DEFAULT);
     const barCells = (y) => {
       if (maxY === 0) return 0;
@@ -1265,68 +1275,50 @@
   };
 
   const chartRenderers = {
-    text(box, items, refValue, hasRef, bc) {
-      if (!hasRef) {
-        // Pass-through: keep the original items; caller detects this
-        // case and leaves items untouched.
-        return null;
-      }
+    text(refValue) {
       return [JSON.stringify(refValue)];
     },
 
-    hbar(box, items, refValue, hasRef, bc, budgetW) {
-      return renderHBar(box, items, refValue, hasRef, bc, budgetW, "hbar");
+    hbar(refValue, bc, budgetW) {
+      return renderHBar(refValue, bc, budgetW, "hbar");
     },
 
     // v0.1 alias: `bar` keeps the original horizontal semantics by
     // delegating to the shared horizontal body. The name is passed
     // through so validation errors read `⚠ bar:` to match what the
     // user actually typed.
-    bar(box, items, refValue, hasRef, bc, budgetW) {
-      return renderHBar(box, items, refValue, hasRef, bc, budgetW, "bar");
+    bar(refValue, bc, budgetW) {
+      return renderHBar(refValue, bc, budgetW, "bar");
     },
 
     // Vertical bars. Mirrors `hbar`'s 10-cell budget, but the budget is
     // the chart HEIGHT rather than width. Each series entry becomes a
     // single-column bar, centered within a column whose width accounts
     // for its label / `(value)` text. Footer rows carry the labels.
-    vbar(box, items, refValue, hasRef, bc) {
-      const err = validateBarSeries(refValue, hasRef, "vbar");
+    vbar(refValue) {
+      const err = validateBarSeries(refValue, "vbar");
       if (err) return err;
-      const labels = refValue.map((e) => String(e.x));
-      const values = refValue.map((e) => `(${e.y})`);
+      const { labels, values, maxY } = prepareBarSeries(refValue);
       const colW = refValue.map((_, i) =>
         Math.max(labels[i].length, values[i].length, 3),
       );
-      const maxY = refValue.reduce((m, e) => Math.max(m, e.y), 0);
       const budget = BAR_HEIGHT_DEFAULT;
       const barH = refValue.map((e) => {
         if (maxY === 0) return 0;
         return Math.round((e.y / maxY) * budget);
       });
-      // Center `s` within `w` cells using pad-before/pad-after.
-      const centerIn = (s, w) => {
-        const left = Math.floor((w - s.length) / 2);
-        const right = w - s.length - left;
-        return (
-          " ".repeat(Math.max(0, left)) + s + " ".repeat(Math.max(0, right))
-        );
-      };
       const rows = [];
-      // Bar rows, top-down. A bar of height h occupies the bottom h of
-      // `budget` rows; the top (budget - h) rows are whitespace.
       for (let r = 0; r < budget; r++) {
         const fromBottom = budget - r; // 1-based distance from baseline
         let line = "";
         for (let i = 0; i < refValue.length; i++) {
           const glyph = barH[i] >= fromBottom ? BAR_GLYPH : " ";
-          line += centerIn(glyph, colW[i]);
+          line += padRow(glyph, colW[i], "center");
         }
         rows.push(line);
       }
-      // Footer row 1: x label. Footer row 2: `(y)` value.
-      rows.push(labels.map((s, i) => centerIn(s, colW[i])).join(""));
-      rows.push(values.map((s, i) => centerIn(s, colW[i])).join(""));
+      rows.push(labels.map((s, i) => padRow(s, colW[i], "center")).join(""));
+      rows.push(values.map((s, i) => padRow(s, colW[i], "center")).join(""));
       return rows;
     },
   };
@@ -1372,7 +1364,7 @@
         }
         refValue = dataMap[ref.name];
       }
-      const rendered = handler(box, items, refValue, true, bc, budgetW);
+      const rendered = handler(refValue, bc, budgetW);
       return rendered
         ? rendered.map((r) => ({ type: "text", content: r }))
         : items;
@@ -1392,10 +1384,9 @@
   const applyChartRenderers = (item, dataMap, bc, budgetW) => {
     if (!item || typeof item !== "object") return;
     if (item.type === "box") {
-      if (item.renderer && !item._rendererApplied) {
+      if (item.renderer) {
         item.items = applyChartRenderer(item, dataMap, bc, budgetW);
-        item._rendererApplied = true;
-      } else if (!item.renderer && Array.isArray(item.items)) {
+      } else if (Array.isArray(item.items)) {
         const bareRef = item.items.find((it) => it && it.type === "dataRef");
         if (bareRef) {
           item.items = [
@@ -1408,10 +1399,6 @@
       }
     }
     if (Array.isArray(item.items)) {
-      for (const child of item.items)
-        applyChartRenderers(child, dataMap, bc, budgetW);
-    }
-    if (item.type === "row" && Array.isArray(item.items)) {
       for (const child of item.items)
         applyChartRenderers(child, dataMap, bc, budgetW);
     }
