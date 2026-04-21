@@ -30,7 +30,12 @@ func Parse(source string) AST {
 	bodyRelToTrimmed := 0
 	if fm := frontmatterRe.FindStringSubmatchIndex(srcTrimmed); fm != nil {
 		inner := srcTrimmed[fm[2]:fm[3]]
-		meta = parseFrontmatter(inner)
+		// parseFrontmatter needs absolute positions so spans on Meta
+		// resolve to the original source. Slice a sub-Source over the
+		// inner bytes via the document's trim-lead offset.
+		innerAbs := trimLead + fm[2]
+		innerSrc := top.Sub(innerAbs, innerAbs+len(inner))
+		meta = parseFrontmatter(innerSrc)
 		afterFM := srcTrimmed[fm[1]:]
 		// Body starts at the first non-whitespace byte after the closing
 		// `---` fence, matching strings.TrimSpace semantics.
@@ -81,8 +86,8 @@ func buildRoot(bodySrc *Source, body string, meta Meta) *Box {
 
 	nameMap := map[string]*Box{}
 	errs := []string{}
-	if len(meta.Errors) > 0 {
-		errs = append(errs, meta.Errors...)
+	for _, e := range meta.Errors {
+		errs = append(errs, e.Message)
 	}
 	collectNames(root, nameMap, &errs)
 	resolveRefs(root, nameMap, &errs, map[*Box]bool{})

@@ -9,10 +9,13 @@ import (
 // parseFrontmatter parses the YAML-subset body between `---` fences.
 // Supports `size:`, `theme:`, and `data:` (flat list or map-of-series).
 // Any unsupported `data:` shape is recorded as a toast-path error.
-func parseFrontmatter(text string) Meta {
+//
+// src is a sub-Source covering the inner bytes between the fences;
+// absolute positions on Meta spans resolve via src's base + linePrefix.
+func parseFrontmatter(src *Source) Meta {
 	meta := Meta{}
-	errs := []string{}
-	lines := splitLines(text)
+	errs := []MetaError{}
+	lines, starts := splitLinesWithOffsets(src.View())
 
 	i := 0
 	for i < len(lines) {
@@ -38,11 +41,23 @@ func parseFrontmatter(text string) Meta {
 				section = append(section, l)
 				j++
 			}
+			// Span covers the header line through the end of the last
+			// accumulated section line. When the section has no lines,
+			// it collapses to the header line itself.
+			lastLine := j - 1
+			if lastLine < i {
+				lastLine = i
+			}
+			dataSpan := src.SpanOf(starts[i], starts[lastLine]+len(lines[lastLine]))
 			val, ok := parseDataSection(section)
 			if ok {
 				meta.Data = val
+				meta.DataSpan = dataSpan
 			} else {
-				errs = append(errs, "Unsupported data: frontmatter shape")
+				errs = append(errs, MetaError{
+					Message: "Unsupported data: frontmatter shape",
+					Span:    dataSpan,
+				})
 			}
 			i = j
 			continue
@@ -53,6 +68,7 @@ func parseFrontmatter(text string) Meta {
 			continue
 		}
 		key, raw := m[1], m[2]
+		lineSpan := src.SpanOf(starts[i], starts[i]+len(lines[i]))
 		switch key {
 		case "size":
 			sm := sizeRe.FindStringSubmatch(raw)
@@ -60,9 +76,11 @@ func parseFrontmatter(text string) Meta {
 				w, _ := strconv.Atoi(sm[1])
 				h, _ := strconv.Atoi(sm[2])
 				meta.Size = &Size{W: w, H: h}
+				meta.SizeSpan = lineSpan
 			}
 		case "theme":
 			meta.Theme = raw
+			meta.ThemeSpan = lineSpan
 		}
 		i++
 	}
@@ -268,10 +286,32 @@ func parseSeriesMap(lines []string, baseIndent int) (interface{}, bool) {
 	return out, true
 }
 
-// splitLines mirrors JS' \r?\n split without trimming the final empty.
-func splitLines(s string) []string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	return strings.Split(s, "\n")
+// splitLinesWithOffsets splits s on `\n`, stripping a trailing `\r`
+// from each returned content line (so regex matches behave exactly as
+// they did under the earlier `\r\n` → `\n` normalisation), while
+// retaining per-line starting byte offsets into the ORIGINAL s. The
+// two slices share length; starts[i] points to the first byte of
+// lines[i] before any CR-stripping.
+func splitLinesWithOffsets(s string) (content []string, starts []int) {
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			line := s[start:i]
+			if len(line) > 0 && line[len(line)-1] == '\r' {
+				line = line[:len(line)-1]
+			}
+			content = append(content, line)
+			starts = append(starts, start)
+			start = i + 1
+		}
+	}
+	tail := s[start:]
+	if len(tail) > 0 && tail[len(tail)-1] == '\r' {
+		tail = tail[:len(tail)-1]
+	}
+	content = append(content, tail)
+	starts = append(starts, start)
+	return
 }
 
 // leadingSpaces returns the count of leading ' ' runes. Non-space

@@ -132,7 +132,27 @@ type Meta struct {
 	Size   *Size
 	Theme  string
 	Data   interface{}
-	Errors []string
+	Errors []MetaError
+
+	// SizeSpan covers the line where `size: WxH` was declared; zero
+	// Span when Size is nil.
+	SizeSpan Span
+	// ThemeSpan covers the line where `theme: ...` was declared; zero
+	// Span when Theme is empty.
+	ThemeSpan Span
+	// DataSpan covers the entire `data:` section, from the header line
+	// through the last line accumulated into the section (inclusive end
+	// = offset past last byte of that line). Zero Span when no `data:`
+	// block appeared.
+	DataSpan Span
+}
+
+// MetaError is a single frontmatter parse error with the source span
+// it refers to. Span covers the offending section (for `data:` shape
+// errors, the entire `data:` section).
+type MetaError struct {
+	Message string
+	Span    Span
 }
 
 // AST is a legacy alias for *Box — the JS parser exposes `parse()` as
