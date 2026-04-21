@@ -39,13 +39,38 @@ type Box struct {
 	// a zero-value Meta.
 	Meta Meta
 	// Errors carries parse-shape errors (toast-path) surfaced by the
-	// root node. Never populated for nested boxes.
+	// root node. Never populated for nested boxes. Retained alongside
+	// UnresolvedRefs / DuplicateNames for backwards-compat with the
+	// string-form toast pipeline; the span-ful side-channels feed
+	// pkg/pylon.Validate().
 	Errors []string
+	// UnresolvedRefs lists `&name` tokens whose targets were never
+	// declared. Span-ful counterpart to the corresponding string in
+	// Errors. Populated on the root box only.
+	UnresolvedRefs []UnresolvedRef
+	// DuplicateNames lists the second-and-subsequent `:: name`
+	// declarations that collided with an earlier one. Populated on
+	// the root box only.
+	DuplicateNames []DuplicateName
 	// Span covers the full bracketed (or parenthesised) range, from the
 	// opening `[` / `(` through the closing `]` / `)`. The synthetic
 	// root box that wraps a bare text source has Span covering the
 	// whole input. Zero Span means span-free (the synthetic root for
 	// the empty-source fallback before re-parse).
+	Span Span
+}
+
+// UnresolvedRef captures a `&name` reference whose target was never
+// declared. Name is the identifier; Span is the `&name` token range.
+type UnresolvedRef struct {
+	Name string
+	Span Span
+}
+
+// DuplicateName captures a `:: name` declaration that collided with
+// an earlier one. Span is the full span of the offending (later) box.
+type DuplicateName struct {
+	Name string
 	Span Span
 }
 

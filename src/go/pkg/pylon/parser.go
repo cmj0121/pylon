@@ -85,16 +85,31 @@ func buildRoot(bodySrc *Source, body string, meta Meta) *Box {
 	root.Meta = meta
 
 	nameMap := map[string]*Box{}
-	errs := []string{}
+	rep := &parseReport{}
 	for _, e := range meta.Errors {
-		errs = append(errs, e.Message)
+		rep.errs = append(rep.errs, e.Message)
 	}
-	collectNames(root, nameMap, &errs)
-	resolveRefs(root, nameMap, &errs, map[*Box]bool{})
-	if len(errs) > 0 {
-		root.Errors = dedupe(errs)
+	collectNames(root, nameMap, rep)
+	resolveRefs(root, nameMap, rep, map[*Box]bool{})
+	if len(rep.errs) > 0 {
+		root.Errors = dedupe(rep.errs)
+	}
+	if len(rep.unresolvedRefs) > 0 {
+		root.UnresolvedRefs = rep.unresolvedRefs
+	}
+	if len(rep.duplicateNames) > 0 {
+		root.DuplicateNames = rep.duplicateNames
 	}
 	return root
+}
+
+// parseReport accumulates parse-time errors surfaced by collectNames
+// and resolveRefs. The string form feeds the legacy root.Errors
+// pipeline; the span-ful slices feed pkg/pylon.Validate().
+type parseReport struct {
+	errs           []string
+	unresolvedRefs []UnresolvedRef
+	duplicateNames []DuplicateName
 }
 
 func dedupe(in []string) []string {
@@ -470,55 +485,58 @@ func stitchLabeledEdges(items []Node) []Node {
 // ---- ref resolution -----------------------------------------------
 
 // collectNames walks the AST collecting every Box.Name into nameMap.
-// Duplicate names are recorded as errors; first occurrence wins.
-func collectNames(n Node, nameMap map[string]*Box, errs *[]string) {
+// Duplicate names are recorded as errors; first occurrence wins. The
+// duplicate's full span is also captured so pkg/pylon.Validate can
+// surface it to the LSP.
+func collectNames(n Node, nameMap map[string]*Box, rep *parseReport) {
 	switch x := n.(type) {
 	case *Box:
 		if x.Name != "" {
 			if _, exists := nameMap[x.Name]; exists {
-				*errs = append(*errs, "Duplicate node name: "+x.Name)
+				rep.errs = append(rep.errs, "Duplicate node name: "+x.Name)
+				rep.duplicateNames = append(rep.duplicateNames, DuplicateName{Name: x.Name, Span: x.Span})
 			} else {
 				nameMap[x.Name] = x
 			}
 		}
 		for _, c := range x.Items {
-			collectNames(c, nameMap, errs)
+			collectNames(c, nameMap, rep)
 		}
 	case *Row:
 		for _, c := range x.Items {
-			collectNames(c, nameMap, errs)
+			collectNames(c, nameMap, rep)
 		}
 	case *Edge:
 		if x.Label != nil {
-			collectNames(x.Label, nameMap, errs)
+			collectNames(x.Label, nameMap, rep)
 		}
 	}
 }
 
 // resolveRefs tags Ref nodes as SameRowArc / CrossRow where applicable,
 // or replaces them with inline Text (unresolved / already-claimed).
-func resolveRefs(n Node, nameMap map[string]*Box, errs *[]string, claimed map[*Box]bool) {
+func resolveRefs(n Node, nameMap map[string]*Box, rep *parseReport, claimed map[*Box]bool) {
 	switch x := n.(type) {
 	case *Box:
-		x.Items = resolveRefsInItems(x.Items, nameMap, errs, claimed)
+		x.Items = resolveRefsInItems(x.Items, nameMap, rep, claimed)
 		for _, c := range x.Items {
-			resolveRefs(c, nameMap, errs, claimed)
+			resolveRefs(c, nameMap, rep, claimed)
 		}
 	case *Row:
 		tagSameRowArcs(x, nameMap)
 		markCrossRowRefs(x, nameMap, claimed)
-		x.Items = resolveRefsInItems(x.Items, nameMap, errs, claimed)
+		x.Items = resolveRefsInItems(x.Items, nameMap, rep, claimed)
 		for _, c := range x.Items {
-			resolveRefs(c, nameMap, errs, claimed)
+			resolveRefs(c, nameMap, rep, claimed)
 		}
 	case *Edge:
 		if x.Label != nil {
-			resolveRefs(x.Label, nameMap, errs, claimed)
+			resolveRefs(x.Label, nameMap, rep, claimed)
 		}
 	}
 }
 
-func resolveRefsInItems(items []Node, nameMap map[string]*Box, errs *[]string, claimed map[*Box]bool) []Node {
+func resolveRefsInItems(items []Node, nameMap map[string]*Box, rep *parseReport, claimed map[*Box]bool) []Node {
 	out := make([]Node, 0, len(items))
 	for _, c := range items {
 		if r, ok := c.(*Ref); ok {
@@ -526,7 +544,7 @@ func resolveRefsInItems(items []Node, nameMap map[string]*Box, errs *[]string, c
 				out = append(out, c)
 				continue
 			}
-			out = append(out, resolveRefText(r, nameMap, errs))
+			out = append(out, resolveRefText(r, nameMap, rep))
 			continue
 		}
 		if e, ok := c.(*Edge); ok && e.Label != nil {
@@ -539,9 +557,10 @@ func resolveRefsInItems(items []Node, nameMap map[string]*Box, errs *[]string, c
 	return out
 }
 
-func resolveRefText(r *Ref, nameMap map[string]*Box, errs *[]string) Node {
+func resolveRefText(r *Ref, nameMap map[string]*Box, rep *parseReport) Node {
 	if _, ok := nameMap[r.Name]; !ok {
-		*errs = append(*errs, "Undefined ref: &"+r.Name)
+		rep.errs = append(rep.errs, "Undefined ref: &"+r.Name)
+		rep.unresolvedRefs = append(rep.unresolvedRefs, UnresolvedRef{Name: r.Name, Span: r.Span})
 		return &Text{Content: "&" + r.Name}
 	}
 	return &Text{Content: r.Name}

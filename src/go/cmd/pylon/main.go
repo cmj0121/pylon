@@ -40,23 +40,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	ast := pylon.Parse(src)
+	for _, d := range pylon.Validate(ast) {
+		emitDiagnostic(os.Stderr, displayPath(cli.Input), d)
+	}
+
 	switch cli.Format {
 	case "ascii":
-		ast := pylon.Parse(src)
 		out := pylon.RenderASCII(ast) + "\n"
 		if err := writeOutput(cli.Output, out); err != nil {
 			log.Error().Err(err).Msg("write output")
 			os.Exit(1)
 		}
 	case "svg":
-		ast := pylon.Parse(src)
 		out := pylon.RenderSVG(ast) + "\n"
 		if err := writeOutput(cli.Output, out); err != nil {
 			log.Error().Err(err).Msg("write output")
 			os.Exit(1)
 		}
 	case "png":
-		ast := pylon.Parse(src)
 		out, err := pylon.RenderPNG(ast)
 		if err != nil {
 			log.Error().Err(err).Msg("render png")
@@ -71,6 +73,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "pylon: unknown format %q\n", cli.Format)
 		os.Exit(2)
 	}
+}
+
+// displayPath returns the label CLI diagnostics print for input
+// location. Matches the stdin convention of other Unix tools: `-`
+// when the source came from stdin, otherwise the provided path.
+func displayPath(input string) string {
+	if input == "" {
+		return "-"
+	}
+	return input
+}
+
+// emitDiagnostic writes one diagnostic to w in a human-readable
+// one-line format:
+//
+//	[CODE] PATH:LINE:COL: MESSAGE
+//
+// Line and column are 1-based for CLI output (editor / compiler
+// convention). LSP ranges stay 0-based on the protocol wire; the
+// conversion happens here, not in Validate.
+func emitDiagnostic(w io.Writer, path string, d pylon.Diagnostic) {
+	fmt.Fprintf(w, "[%s] %s:%d:%d: %s\n",
+		d.Code, path, d.Span.Start.Line+1, d.Span.Start.Column+1, d.Message)
 }
 
 func setupLogging(verbose int) {
