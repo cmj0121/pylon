@@ -1,7 +1,7 @@
 // pylon is a CLI that reads Pylon source and emits ASCII/SVG/PNG.
 //
-// This commit wires the ASCII and SVG paths; the `png` format still
-// prints "not yet implemented" to stderr and exits non-zero.
+// All three formats are wired: ASCII and SVG are text; PNG is a
+// binary bitmap rendered via an embedded JetBrains Mono font.
 package main
 
 import (
@@ -56,8 +56,16 @@ func main() {
 			os.Exit(1)
 		}
 	case "png":
-		fmt.Fprintf(os.Stderr, "pylon: %s format not yet implemented\n", cli.Format)
-		os.Exit(1)
+		ast := pylon.Parse(src)
+		out, err := pylon.RenderPNG(ast)
+		if err != nil {
+			log.Error().Err(err).Msg("render png")
+			os.Exit(1)
+		}
+		if err := writeOutputBytes(cli.Output, out); err != nil {
+			log.Error().Err(err).Msg("write output")
+			os.Exit(1)
+		}
 	default:
 		// kong's enum tag already guards this, but keep the catchall.
 		fmt.Fprintf(os.Stderr, "pylon: unknown format %q\n", cli.Format)
@@ -93,4 +101,15 @@ func writeOutput(path, payload string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(payload), 0o644)
+}
+
+// writeOutputBytes is the binary-safe variant used for PNG output.
+// It writes raw bytes without any text-mode transformation, so PNG
+// headers / compressed streams reach stdout unmodified.
+func writeOutputBytes(path string, payload []byte) error {
+	if path == "" || path == "-" {
+		_, err := os.Stdout.Write(payload)
+		return err
+	}
+	return os.WriteFile(path, payload, 0o644)
 }

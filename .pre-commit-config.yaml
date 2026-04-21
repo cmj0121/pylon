@@ -4,9 +4,9 @@ repos:
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
-        exclude: ^src/go/pylon/testdata/.*\.(ascii|svg)$
+        exclude: ^src/go/pylon/(testdata/.*\.(ascii|svg)|assets/.*)$
       - id: trailing-whitespace
-        exclude: ^src/go/pylon/testdata/.*\.(ascii|svg)$
+        exclude: ^src/go/pylon/(testdata/.*\.(ascii|svg)|assets/.*)$
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.47.0
     hooks:
