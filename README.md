@@ -462,6 +462,52 @@ Multiple top-level nodes stack vertically:
 (World)
 ```
 
+## Command-line interface
+
+A local Go CLI under [`src/go/`](src/go/) reads a `.pylon` source (positional argument or
+stdin) and emits **ASCII**, **SVG**, or **PNG** to a file or stdout. It ships the same parser
+and renderers as the Web UI so a diagram that works in the browser works at the shell.
+
+### Install
+
+```sh
+go install github.com/cmj0121/pylon/src/go@latest
+```
+
+The module path ends in `/src/go` — `github.com/cmj0121/pylon@latest` alone will not resolve,
+because the Go module lives in the `src/go/` subdirectory of the repository.
+
+### Usage
+
+```sh
+# ASCII from stdin (default format, default output is stdout):
+echo '[ Start ] -> [ End ]' | pylon
+
+# SVG to a file:
+pylon -f svg -o diagram.svg examples/flow.pylon
+
+# PNG to a file (embeds JetBrains Mono for glyph metrics):
+pylon -f png -o diagram.png examples/flow.pylon
+```
+
+### Flags
+
+| Flag           | Value             | Description                                         |
+| -------------- | ----------------- | --------------------------------------------------- |
+| `-f`           | `ascii\|svg\|png` | Output format. Default `ascii`.                     |
+| `-o`           | path or `-`       | Output file; `-` (default) writes to stdout.        |
+| `-v` / `-vv`   | flag              | Verbose logging on stderr; `-vv` drops to debug.    |
+| _(positional)_ | path              | Input `.pylon` file. Reads from stdin when omitted. |
+
+### Known limitations
+
+Chart renderers (`| bar`, `| hbar`, `| vbar`, `| text`) are parsed but not yet rendered by the
+Go CLI — use the [JS library](src/js/) for chart output until the follow-up lands.
+
+The PNG output embeds [JetBrains Mono](src/go/pylon/assets/JetBrainsMono-Regular.ttf); see
+[`src/go/pylon/assets/JetBrainsMono-OFL.txt`](src/go/pylon/assets/JetBrainsMono-OFL.txt) for
+its SIL Open Font License 1.1. Built-in binary is ~6.9 MiB.
+
 ## Editor support
 
 A Vim plugin lives under [`contrib/vim/`](contrib/vim/) providing syntax highlighting and
