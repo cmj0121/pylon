@@ -1,16 +1,19 @@
 // Command pylon-lsp is the Language Server for Pylon source files.
 //
-// Scaffold only; glsp wiring lands in U4. Running this binary today
-// prints a placeholder line to stderr and exits non-zero so it cannot
-// be mistaken for a working LSP server.
+// Speaks LSP over stdio. Logging is routed to stderr exclusively —
+// stdout is the LSP transport, and any byte there corrupts the wire.
 package main
 
 import (
-	"fmt"
 	"os"
+
+	"github.com/cmj0121/pylon/src/go/internal/lsp"
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "pylon-lsp: scaffold stub; server wiring lands in U4")
-	os.Exit(1)
+	if err := lsp.Run(); err != nil {
+		// stderr, not stdout — stdout is reserved for LSP traffic.
+		_, _ = os.Stderr.WriteString("pylon-lsp: " + err.Error() + "\n")
+		os.Exit(1)
+	}
 }
