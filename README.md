@@ -68,6 +68,9 @@ The same diagram under `theme: ascii` swaps the Unicode glyphs for plain `+-|<>`
 +-----------+  +-------------+  +---------+
 ```
 
+More examples live under [`examples/`](examples/) — one file per feature
+(flow chains, named refs, labelled edges, bar charts, themes).
+
 ## Data and Renderers
 
 Boxes can render data instead of literal text. Declare series in a `data:` frontmatter
