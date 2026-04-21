@@ -1,7 +1,7 @@
 // pylon is a CLI that reads Pylon source and emits ASCII/SVG/PNG.
 //
-// This commit wires only the ASCII path; `svg` / `png` formats print
-// "not yet implemented" to stderr and exit non-zero.
+// This commit wires the ASCII and SVG paths; the `png` format still
+// prints "not yet implemented" to stderr and exits non-zero.
 package main
 
 import (
@@ -48,7 +48,14 @@ func main() {
 			log.Error().Err(err).Msg("write output")
 			os.Exit(1)
 		}
-	case "svg", "png":
+	case "svg":
+		ast := pylon.Parse(src)
+		out := pylon.RenderSVG(ast) + "\n"
+		if err := writeOutput(cli.Output, out); err != nil {
+			log.Error().Err(err).Msg("write output")
+			os.Exit(1)
+		}
+	case "png":
 		fmt.Fprintf(os.Stderr, "pylon: %s format not yet implemented\n", cli.Format)
 		os.Exit(1)
 	default:
