@@ -22,13 +22,22 @@ func NewHandlers(store *Store) *Handlers {
 	return &Handlers{Store: store}
 }
 
-// Diagnostics returns the diagnostics to publish for uri. U4 stub
-// returns nil; U5 swaps this for a Validate() walk.
+// Diagnostics returns the cached pylon diagnostics for uri translated
+// into the LSP protocol shape. Translation only — Parse + Validate
+// ran when the Store.Open / Change notification landed. Returns nil
+// for unknown URIs; returns an empty slice (not nil) when the cached
+// document has no diagnostics, so callers can distinguish "clean
+// state" from "unknown document" without an extra probe.
 func (h *Handlers) Diagnostics(uri string) []protocol.Diagnostic {
-	if _, ok := h.Store.Get(uri); !ok {
+	doc, ok := h.Store.Get(uri)
+	if !ok {
 		return nil
 	}
-	return nil
+	out := make([]protocol.Diagnostic, 0, len(doc.Diagnostics))
+	for _, d := range doc.Diagnostics {
+		out = append(out, toProtocolDiagnostic(d))
+	}
+	return out
 }
 
 // DocumentSymbols returns the symbols for uri. U4 stub returns nil;

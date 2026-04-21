@@ -107,30 +107,29 @@ func onExit(ctx *glsp.Context) error {
 }
 
 // onDidOpen returns a glsp-shaped callback that records the opened
-// document in the store. Returning a closure keeps handlers *Handlers
-// reachable for U5 (which will call h.Diagnostics and publish via ctx).
+// document in the store and publishes its diagnostics to the client.
+// Returning a closure keeps *Handlers reachable for the publish step.
 func onDidOpen(store *Store, h *Handlers) protocol.TextDocumentDidOpenFunc {
 	return func(ctx *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
-		store.Open(
-			string(params.TextDocument.URI),
-			params.TextDocument.Version,
-			params.TextDocument.Text,
-		)
+		uri := string(params.TextDocument.URI)
+		store.Open(uri, params.TextDocument.Version, params.TextDocument.Text)
+		publishDiagnostics(ctx, h, uri)
 		return nil
 	}
 }
 
-// onDidChange refreshes the store from a full-sync replacement. The
-// glsp protocol also supports incremental updates via a different
-// ContentChange union; we advertise Full in capabilities so clients
-// always send a single full-text entry.
+// onDidChange refreshes the store from a full-sync replacement and
+// republishes diagnostics. glsp's ContentChange is a union type
+// (incremental vs whole) — we advertise Full in capabilities so the
+// Whole arm is expected, but the type switch tolerates either shape
+// for malformed clients.
 func onDidChange(store *Store, h *Handlers) protocol.TextDocumentDidChangeFunc {
 	return func(ctx *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
 		if len(params.ContentChanges) == 0 {
 			return nil
 		}
 		// Full-sync contract: the last ContentChange carries the full
-		// buffer. Union type means we have to type-switch.
+		// buffer.
 		last := params.ContentChanges[len(params.ContentChanges)-1]
 		var text string
 		switch c := last.(type) {
@@ -141,14 +140,50 @@ func onDidChange(store *Store, h *Handlers) protocol.TextDocumentDidChangeFunc {
 		default:
 			return nil
 		}
-		store.Change(string(params.TextDocument.URI), params.TextDocument.Version, text)
+		uri := string(params.TextDocument.URI)
+		store.Change(uri, params.TextDocument.Version, text)
+		publishDiagnostics(ctx, h, uri)
 		return nil
 	}
 }
 
+// onDidClose evicts the document and clears any diagnostics the
+// client still thinks are live — LSP convention is that the server
+// owns the set until it tells the client otherwise.
 func onDidClose(store *Store, h *Handlers) protocol.TextDocumentDidCloseFunc {
 	return func(ctx *glsp.Context, params *protocol.DidCloseTextDocumentParams) error {
-		store.Close(string(params.TextDocument.URI))
+		uri := string(params.TextDocument.URI)
+		store.Close(uri)
+		// Publish an empty diagnostics array so the client drops any
+		// markers it still has for this URI. Done AFTER the evict so
+		// Handlers.Diagnostics observes the empty cache and returns
+		// nil — we then send an explicit empty slice below to satisfy
+		// LSP's "server is responsible for clearing state" contract.
+		ctx.Notify(
+			protocol.ServerTextDocumentPublishDiagnostics,
+			protocol.PublishDiagnosticsParams{
+				URI:         uri,
+				Diagnostics: []protocol.Diagnostic{},
+			},
+		)
 		return nil
 	}
+}
+
+// publishDiagnostics computes the current diagnostic set for uri and
+// pushes it to the client as a textDocument/publishDiagnostics
+// notification. Called from didOpen and didChange closures after the
+// store update.
+func publishDiagnostics(ctx *glsp.Context, h *Handlers, uri string) {
+	diags := h.Diagnostics(uri)
+	if diags == nil {
+		diags = []protocol.Diagnostic{}
+	}
+	ctx.Notify(
+		protocol.ServerTextDocumentPublishDiagnostics,
+		protocol.PublishDiagnosticsParams{
+			URI:         uri,
+			Diagnostics: diags,
+		},
+	)
 }
