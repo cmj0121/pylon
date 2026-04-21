@@ -70,7 +70,7 @@ Live demo: <https://cmj0121.github.io/pylon/>.
 ### Command line
 
 ```sh
-go install github.com/cmj0121/pylon/src/go@latest
+go install github.com/cmj0121/pylon/src/go/cmd/pylon@latest
 ```
 
 ```sh

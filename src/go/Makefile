@@ -3,12 +3,15 @@ GO      ?= go
 GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w
 
+PYLON     := $(DIST)/pylon
+PYLON_LSP := $(DIST)/pylon-lsp
+
 .PHONY: all clean test run build upgrade install uninstall parity help
 
-all: build					# default: build binary
+all: build					# default: build binaries
 
-clean:						# remove binary
-	@rm -f $(DIST)/pylon
+clean:						# remove binaries
+	@rm -f $(PYLON) $(PYLON_LSP)
 
 test:						# run go test
 	@$(GO) test ./...
@@ -16,27 +19,33 @@ test:						# run go test
 run:						# no-op for a CLI; use install + pylon
 	@echo "use 'make install' then invoke 'pylon'"
 
-# build: produce a release-style binary.
+# build: produce release-style binaries.
 #   -ldflags="-s -w" strips the symbol table (-s) and DWARF debug info (-w),
 #   shrinking the binary ~20-30% with no runtime cost; stack traces still
 #   work but lose file/line info.
 #   -trimpath removes local build-path prefixes for reproducibility and a
 #   small additional size win.
-build:						# build the binary to $(DIST)/pylon
+build: $(PYLON) $(PYLON_LSP)			# build both binaries to $(DIST)/
+
+$(PYLON):
 	@mkdir -p $(DIST)
-	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(DIST)/pylon .
+	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(PYLON) ./cmd/pylon
+
+$(PYLON_LSP):
+	@mkdir -p $(DIST)
+	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(PYLON_LSP) ./cmd/pylon-lsp
 
 upgrade:					# update all go module dependencies
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
-install:					# install to $(GOBIN) or $(GOPATH)/bin
-	@$(GO) install .
+install:					# install both binaries to $(GOBIN) or $(GOPATH)/bin
+	@$(GO) install ./cmd/pylon ./cmd/pylon-lsp
 
-uninstall:					# remove binary from $(DIST)
-	@rm -f $(DIST)/pylon
+uninstall:					# remove binaries from $(DIST)
+	@rm -f $(PYLON) $(PYLON_LSP)
 
-parity: build					# byte-compare ASCII output of Go vs JS on the same fixtures
+parity: $(PYLON)				# byte-compare ASCII output of Go vs JS on the same fixtures
 	@../../scripts/pylon-parity.sh
 
 help:						# show this message

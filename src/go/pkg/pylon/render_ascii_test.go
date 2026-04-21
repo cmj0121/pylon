@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestRenderASCII walks src/go/pylon/testdata for matched .pylon /
+// TestRenderASCII walks src/go/pkg/pylon/testdata for matched .pylon /
 // .ascii pairs and asserts byte-exact ASCII output parity with the
 // JS reference renderer.
 func TestRenderASCII(t *testing.T) {

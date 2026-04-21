@@ -418,14 +418,16 @@ a diagram that works in the browser works at the shell.
 Install with:
 
 ```sh
-go install github.com/cmj0121/pylon/src/go@latest
+go install github.com/cmj0121/pylon/src/go/cmd/pylon@latest
 ```
 
 The module path is `github.com/cmj0121/pylon/src/go`, not
 `github.com/cmj0121/pylon`. Running
 `go install github.com/cmj0121/pylon@latest` without the `/src/go`
 suffix fails with an "unrecognized import path" error — this is a Go
-sub-directory module, not a top-level one.
+sub-directory module, not a top-level one. The `cmd/pylon` tail selects
+the CLI main package (a sibling `cmd/pylon-lsp` package holds the
+Language Server) and yields a binary named `pylon` as expected.
 
 ### Formats and I/O
 
@@ -451,7 +453,7 @@ Flag details: `pylon --help`.
 
 The Go CLI binary bundles JetBrains Mono Regular (OFL 1.1, shipped
 at
-[`../src/go/pylon/assets/JetBrainsMono-OFL.txt`](../src/go/pylon/assets/JetBrainsMono-OFL.txt))
+[`../src/go/pkg/pylon/assets/JetBrainsMono-OFL.txt`](../src/go/pkg/pylon/assets/JetBrainsMono-OFL.txt))
 to rasterize PNG output. With stripped debug info
 (`-ldflags="-s -w" -trimpath`), `dist/pylon` is around 4.8 MiB on
 darwin/arm64.

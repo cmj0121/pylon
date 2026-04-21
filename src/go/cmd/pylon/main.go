@@ -13,7 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/cmj0121/pylon/src/go/pylon"
+	"github.com/cmj0121/pylon/src/go/pkg/pylon"
 )
 
 // CLI is the kong-tagged struct describing the command-line surface.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-implementation parity gate.
 #
-# For each .pylon fixture under src/go/pylon/testdata/, render via
+# For each .pylon fixture under src/go/pkg/pylon/testdata/, render via
 # both the Go binary (dist/pylon) and the JS library (src/js/pylon.js
 # via a headless node shim) and byte-compare the ASCII outputs.
 #
@@ -13,7 +13,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 go_bin="$repo_root/dist/pylon"
 js_bundle="$repo_root/dist/pylon.min.js"
-fixtures="$repo_root/src/go/pylon/testdata"
+fixtures="$repo_root/src/go/pkg/pylon/testdata"
 
 test -x "$go_bin" || { echo "missing $go_bin; run make -C src/go build"; exit 2; }
 test -f "$js_bundle" || { echo "missing $js_bundle; run make -C src/js build"; exit 2; }
