@@ -1,5 +1,7 @@
-DIST ?= ../../dist
-GO   ?= go
+DIST    ?= ../../dist
+GO      ?= go
+GOFLAGS ?= -trimpath
+LDFLAGS ?= -s -w
 
 .PHONY: all clean test run build upgrade install uninstall parity help
 
@@ -14,9 +16,15 @@ test:						# run go test
 run:						# no-op for a CLI; use install + pylon
 	@echo "use 'make install' then invoke 'pylon'"
 
+# build: produce a release-style binary.
+#   -ldflags="-s -w" strips the symbol table (-s) and DWARF debug info (-w),
+#   shrinking the binary ~20-30% with no runtime cost; stack traces still
+#   work but lose file/line info.
+#   -trimpath removes local build-path prefixes for reproducibility and a
+#   small additional size win.
 build:						# build the binary to $(DIST)/pylon
 	@mkdir -p $(DIST)
-	@$(GO) build -o $(DIST)/pylon .
+	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(DIST)/pylon .
 
 upgrade:					# update all go module dependencies
 	@$(GO) get -u ./...
