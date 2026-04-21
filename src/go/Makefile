@@ -1,7 +1,7 @@
 DIST ?= ../../dist
 GO   ?= go
 
-.PHONY: all clean test run build upgrade install uninstall help
+.PHONY: all clean test run build upgrade install uninstall parity help
 
 all: build					# default: build binary
 
@@ -27,6 +27,9 @@ install:					# install to $(GOBIN) or $(GOPATH)/bin
 
 uninstall:					# remove binary from $(DIST)
 	@rm -f $(DIST)/pylon
+
+parity: build					# byte-compare ASCII output of Go vs JS on the same fixtures
+	@../../scripts/pylon-parity.sh
 
 help:						# show this message
 	@printf "Usage: make -C src/go [OPTION]\n"
