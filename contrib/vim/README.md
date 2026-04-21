@@ -50,6 +50,24 @@ cp -R /tmp/pylon/contrib/vim/* ~/.vim/pack/pylon/start/pylon/
 
 Then restart Vim. Neovim users substitute `~/.config/nvim/pack/...`.
 
+### Make target
+
+If you already have the repo checked out, the bundled `Makefile` wraps the
+copy/remove steps:
+
+```sh
+make -C contrib/vim install              # installs to ~/.config/nvim/pack/pylon/start/pylon
+make -C contrib/vim install VIM_PACK=$HOME/.vim/pack/pylon/start/pylon
+make -C contrib/vim install VIM_PACK=$HOME/.local/share/nvim/site/pack/pylon/start/pylon
+make -C contrib/vim uninstall
+```
+
+`VIM_PACK` defaults to Neovim's config-home native package path (under
+`$HOME/.config/nvim/`, which Neovim includes on `runtimepath` by default);
+override it for Vim 8+'s `~/.vim/pack/...` layout, the XDG data-home
+`~/.local/share/nvim/site/pack/...` location, or any other runtimepath
+root.
+
 ## What gets highlighted
 
 | Group               | Matches                                                     |
