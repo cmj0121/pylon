@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 54" width="430" height="54">
+<style>text { font-family: "Cascadia Code", "JetBrains Mono", "Iosevka", ui-monospace, Menlo, Consolas, monospace; font-size: 14px; fill: #0f1c2d; white-space: pre; }</style>
+<text x="0" y="14" xml:space="preserve">┌───────────┐  ┌─────────────┐  ┌─────────┐</text>
+<text x="0" y="32" xml:space="preserve">│   Start   │─▶│   Process   │─▶│   End   │</text>
+<text x="0" y="50" xml:space="preserve">└───────────┘  └─────────────┘  └─────────┘</text>
+</svg>
