@@ -1,4 +1,4 @@
-SUBDIR := src/js contrib/vim
+SUBDIR := src/js src/go contrib/vim
 
 .PHONY: all clean test run build upgrade install uninstall help $(SUBDIR)
 
