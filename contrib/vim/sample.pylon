@@ -1,0 +1,31 @@
+---
+size: 80x24
+theme: "mono"
+data:
+  - x: 1
+    y: 10
+  - x: 2
+    y: 20
+---
+[ frontmatter above exercises: fence, key, number, quoted string, list dash ]
+
+[- bordered node with leading+trailing alignment dashes -]
+( borderless node )
+
+[ A ] -> [ B ]
+[ C ] <- [ D ]
+[ E ] <-> [ F ]
+[ G ] --> [ H ]
+[ I ] <--> [ J ]
+[ K ] ---> [ L ]
+
+[ src ] -- ( friend ) --> [ dst ]
+
+[- declare me :: alpha -]
+[- point back   &alpha -]
+
+[- chart body @series1 | bar -]
+[- chart body @series1 | hbar -]
+[- chart body @series1 | vbar -]
+
+[ contact user@example.com stays literal, no data ref ]

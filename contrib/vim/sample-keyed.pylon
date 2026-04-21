@@ -1,0 +1,19 @@
+---
+size: 80x24
+theme: "mono"
+data:
+  counter:
+    - x: 1
+      y: 10
+    - x: 2
+      y: 20
+  sales:
+    - x: 1
+      y: 100
+    - x: 2
+      y: 200
+---
+[ frontmatter above exercises the keyed data shape: map of named series ]
+
+[- chart body @counter | bar -]
+[- chart body @sales   | vbar -]

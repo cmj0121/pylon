@@ -2,7 +2,7 @@ PORT ?= 3333
 ESBUILD ?= esbuild@0.24.0
 DIST ?= ../../dist
 
-.PHONY: all clean test run build help
+.PHONY: all clean test run build upgrade install uninstall help $(SUBDIR)
 
 all: build			# default action
 
@@ -21,6 +21,12 @@ build:				# assemble dist/ (minified JS, CSS, and production index.html)
 	@npx --yes $(ESBUILD) pylon.js --minify --target=es2020 --outfile=$(DIST)/pylon.min.js
 	@cp pylon.css $(DIST)/
 	@sed 's|pylon\.js|pylon.min.js|' index.html > $(DIST)/index.html
+
+upgrade:			# upgrade all the necessary packages
+
+install:			# install the minified bundle into the local environment
+
+uninstall:			# uninstall the minified bundle from the local environment
 
 help:				# show this message
 	@printf "Usage: make -C src/js [OPTION]\n"

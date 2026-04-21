@@ -1,0 +1,10 @@
+---
+data:
+  - x: apples
+    y: 10
+  - x: bananas
+    y: 20
+  - x: cherries
+    y: 15
+---
+[ @data | bar ]

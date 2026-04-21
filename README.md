@@ -68,6 +68,9 @@ The same diagram under `theme: ascii` swaps the Unicode glyphs for plain `+-|<>`
 +-----------+  +-------------+  +---------+
 ```
 
+More examples live under [`examples/`](examples/) — one file per feature
+(flow chains, named refs, labelled edges, bar charts, themes).
+
 ## Data and Renderers
 
 Boxes can render data instead of literal text. Declare series in a `data:` frontmatter
@@ -458,6 +461,41 @@ Multiple top-level nodes stack vertically:
 [Hello]
 (World)
 ```
+
+## Editor support
+
+A Vim plugin lives under [`contrib/vim/`](contrib/vim/) providing syntax highlighting and
+filetype detection for Pylon source files. The recognised filename extension is `.pylon`.
+
+Install with [vim-plug](https://github.com/junegunn/vim-plug):
+
+```vim
+Plug 'cmj0121/pylon', { 'rtp': 'contrib/vim' }
+```
+
+See [`contrib/vim/README.md`](contrib/vim/README.md) for other install methods (lazy.nvim,
+native packages).
+
+Every colored construct in a single snippet — frontmatter, bordered node, alignment,
+edge, named node, `&ref`, `@ref`, and `| bar`:
+
+```pylon
+---
+size: 60x20
+theme: simple
+data:
+  - x: 1
+    y: 10
+  - x: 2
+    y: 20
+---
+[- Start :: begin -] -> [ Process ] -> [ End -]
+[ Loop ] -> &begin
+[ @data | bar ]
+```
+
+The colors only appear in Vim; GitHub's markdown renderer leaves the `pylon` fence tag
+as plain text.
 
 ## DDD (Dream-Driven Development)
 

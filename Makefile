@@ -1,24 +1,28 @@
-SUBDIR := src/js
+SUBDIR := src/js contrib/vim
 
-.PHONY: all clean test run build upgrade help $(SUBDIR)
+.PHONY: all clean test run build upgrade install uninstall help $(SUBDIR)
 
-all: $(SUBDIR) 		# default action
+all: $(SUBDIR) 			# default action
 	@[ -f .git/hooks/pre-commit ] || pre-commit install --install-hooks
 	@git config commit.template .git-commit-template
 
-clean: $(SUBDIR)	# clean-up environment
+clean: $(SUBDIR)		# clean-up environment
 	@find . -name '*.sw[po]' -delete
 
-test: $(SUBDIR)		# run test
+test: $(SUBDIR)			# run test
 
-run: $(SUBDIR)		# run in the local environment
+run: $(SUBDIR)			# run in the local environment
 
-build: $(SUBDIR)	# build the binary/library
+build: $(SUBDIR)		# build the binary/library
 
-upgrade:			# upgrade all the necessary packages
+upgrade:				# upgrade all the necessary packages
 	pre-commit autoupdate
 
-help:				# show this message
+install: $(SUBDIR)		# install everything into the local environment
+
+uninstall: $(SUBDIR)	# uninstall everything from the local environment
+
+help:					# show this message
 	@printf "Usage: make [OPTION]\n"
 	@printf "\n"
 	@perl -nle 'print $$& if m{^[\w-]+:.*?#.*$$}' $(MAKEFILE_LIST) | \
