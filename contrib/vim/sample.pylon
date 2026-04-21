@@ -21,7 +21,7 @@ data:
 
 [ src ] -- ( friend ) --> [ dst ]
 
-[- declare me -] :: alpha
+[- declare me :: alpha -]
 [- point back   &alpha -]
 
 [- chart body @series1 | bar -]

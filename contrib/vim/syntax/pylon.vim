@@ -73,8 +73,13 @@ syntax match pylonEdge /<-\+>\?/
 syntax match pylonEdge /-\+>/
 
 " `::` name declaration at end of a bracketed body: `[- label -] :: name`.
-" NAME_RE = /::\s*([A-Za-z_]\w*)\s*$/ in the JS parser.
-syntax match pylonNameDeclare /::\s*[A-Za-z_][A-Za-z0-9_]*\s*$/
+" NAME_RE = /::\s*([A-Za-z_]\w*)\s*$/ in the JS parser. Split into two
+" groups so the separator and the name can be colored distinctly. The
+" separator's lookahead (`\s\+IDENT\s*$`) gates it to declaration position
+" only; the name is `contained` so it only fires after the separator.
+syntax match pylonNameSep /::\ze\s\+[A-Za-z_]\w*\%(\s\+-\)\?\s*\%([])]\|$\)/
+      \ nextgroup=pylonNameDeclare skipwhite
+syntax match pylonNameDeclare /[A-Za-z_][A-Za-z0-9_]*\>/ contained
 
 " Trailing `| renderer` pipe inside a node body. Supports chained renderer
 " names (`| bar | hbar`) though only the first is used; the JS parser
@@ -107,6 +112,7 @@ hi def link pylonFMListDash       Delimiter
 hi def link pylonBracket          Delimiter
 hi def link pylonEdge             Operator
 hi def link pylonAlignMarker      Operator
+hi def link pylonNameSep          Operator
 hi def link pylonNameDeclare      Define
 hi def link pylonNodeRef          Identifier
 hi def link pylonDataRef          Constant
