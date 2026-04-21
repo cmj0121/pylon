@@ -3,15 +3,16 @@ GO      ?= go
 GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w
 
-PYLON     := $(DIST)/pylon
-PYLON_LSP := $(DIST)/pylon-lsp
+PYLON          := $(DIST)/pylon
+PYLON_LSP      := $(DIST)/pylon-lsp
+PYLON_DUMP_DIAG := $(DIST)/pylon-dump-diagnostics
 
-.PHONY: all clean test run build upgrade install uninstall parity help
+.PHONY: all clean test run build upgrade install uninstall parity parity-diagnostics help
 
 all: build					# default: build binaries
 
 clean:						# remove binaries
-	@rm -f $(PYLON) $(PYLON_LSP)
+	@rm -f $(PYLON) $(PYLON_LSP) $(PYLON_DUMP_DIAG)
 
 test:						# run go test
 	@$(GO) test ./...
@@ -25,7 +26,7 @@ run:						# no-op for a CLI; use install + pylon
 #   work but lose file/line info.
 #   -trimpath removes local build-path prefixes for reproducibility and a
 #   small additional size win.
-build: $(PYLON) $(PYLON_LSP)			# build both binaries to $(DIST)/
+build: $(PYLON) $(PYLON_LSP) $(PYLON_DUMP_DIAG)	# build all three binaries to $(DIST)/
 
 $(PYLON):
 	@mkdir -p $(DIST)
@@ -35,21 +36,28 @@ $(PYLON_LSP):
 	@mkdir -p $(DIST)
 	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(PYLON_LSP) ./cmd/pylon-lsp
 
+$(PYLON_DUMP_DIAG):
+	@mkdir -p $(DIST)
+	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(PYLON_DUMP_DIAG) ./cmd/pylon-dump-diagnostics
+
 upgrade:					# update all go module dependencies
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
-install:					# install both binaries to $(GOBIN) or $(GOPATH)/bin
+install:					# install binaries to $(GOBIN) or $(GOPATH)/bin
 	@$(GO) install ./cmd/pylon ./cmd/pylon-lsp
 
 uninstall:					# remove binaries from $(DIST)
-	@rm -f $(PYLON) $(PYLON_LSP)
+	@rm -f $(PYLON) $(PYLON_LSP) $(PYLON_DUMP_DIAG)
 
 parity: $(PYLON)				# byte-compare ASCII output of Go vs JS on the same fixtures
 	@../../scripts/pylon-parity.sh
+
+parity-diagnostics: $(PYLON_DUMP_DIAG)		# diff JS and Go diagnostic sets over the bad-input corpus
+	@../../scripts/pylon-diagnostics-parity.sh
 
 help:						# show this message
 	@printf "Usage: make -C src/go [OPTION]\n"
 	@printf "\n"
 	@perl -nle 'print $$& if m{^[\w-]+:.*?#.*$$}' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?#"} {printf "    %-18s %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?#"} {printf "    %-22s %s\n", $$1, $$2}'

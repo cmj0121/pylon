@@ -150,8 +150,8 @@ func TestValidateBarShape(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no CodeBarShape; got %+v", diags)
 	}
-	if d.Message != "⚠ hbar: expected [{x,y}]" {
-		t.Errorf("Message=%q (bar alias should report as hbar)", d.Message)
+	if d.Message != "⚠ bar: expected [{x,y}]" {
+		t.Errorf("Message=%q (bar alias threads its literal name through)", d.Message)
 	}
 }
 
@@ -168,7 +168,7 @@ func TestValidateBarEmpty(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no CodeBarEmpty; got %+v", diags)
 	}
-	if d.Message != "⚠ hbar: empty series" {
+	if d.Message != "⚠ bar: empty series" {
 		t.Errorf("Message=%q", d.Message)
 	}
 }
@@ -180,7 +180,7 @@ func TestValidateBarNegativeY(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no CodeBarNegativeY; got %+v", diags)
 	}
-	if d.Message != "⚠ hbar: negative y" {
+	if d.Message != "⚠ bar: negative y" {
 		t.Errorf("Message=%q", d.Message)
 	}
 }
@@ -192,23 +192,24 @@ func TestValidateBarDuplicateX(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no CodeBarDuplicateX; got %+v", diags)
 	}
-	if d.Message != `⚠ hbar: duplicate x "a"` {
+	if d.Message != `⚠ bar: duplicate x "a"` {
 		t.Errorf("Message=%q", d.Message)
 	}
 }
 
-func TestValidateBarAliasResolvesToHbar(t *testing.T) {
-	// bar alias dispatches through hbar — shape/empty/etc. errors
-	// carry "hbar:" prefix, NOT "bar:". EXCEPTION: use-@-ref keeps
-	// the literal name ("bar:"), tested in TestValidateUseAtRef.
+func TestValidateBarAliasKeepsLiteralName(t *testing.T) {
+	// JS threads the literal renderer name into validateBarSeries
+	// (renderHBar(_, _, _, "bar")), so `bar` stays `bar` in diagnostics
+	// instead of resolving to the internal `hbar`. This matches what
+	// the user actually typed.
 	src := "---\ndata:\n  - x: a\n    y: -1\n---\n[ @data | bar ]"
 	diags := Validate(Parse(src))
 	d := findDiag(diags, CodeBarNegativeY)
 	if d == nil {
 		t.Fatalf("no CodeBarNegativeY; got %+v", diags)
 	}
-	if d.Message != "⚠ hbar: negative y" {
-		t.Errorf("alias-resolution failed: Message=%q, want hbar prefix", d.Message)
+	if d.Message != "⚠ bar: negative y" {
+		t.Errorf("Message=%q, want bar prefix (literal name, not alias target)", d.Message)
 	}
 }
 

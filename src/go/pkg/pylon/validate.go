@@ -73,24 +73,14 @@ func validateNames(root *Box) []Diagnostic {
 }
 
 // knownRenderers mirrors the JS chartRenderers table. `bar` is a v0.1
-// alias for `hbar` — shape / empty / negative-y / duplicate-x errors
-// surface as `hbar: …` because the handler is shared. Only the
-// `use @ref` path keeps the user-typed name for UX.
+// alias that delegates to the horizontal renderer body but threads
+// its own name through for diagnostics — the user sees "⚠ bar: …"
+// when they wrote `| bar`, not the internal "⚠ hbar: …".
 var knownRenderers = map[string]bool{
 	"text": true,
 	"hbar": true,
 	"vbar": true,
 	"bar":  true,
-}
-
-// resolvedBarName returns the actually-invoked renderer name for
-// bar-family diagnostics. `bar` dispatches through hbar; hbar/vbar
-// stay as themselves.
-func resolvedBarName(renderer string) string {
-	if renderer == "bar" {
-		return "hbar"
-	}
-	return renderer
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -193,9 +183,12 @@ func validateBarData(root *Box) []Diagnostic {
 
 // barSeriesDiagnostics validates a resolved series against the
 // bar-family shape rules. Emits at most one diagnostic (the first
-// violation) to mirror JS's short-circuit.
+// violation) to mirror JS's short-circuit. The renderer name threads
+// through verbatim — `bar` stays `bar` in error messages to match
+// what the user actually typed (JS: renderHBar(refValue, bc, budgetW,
+// "bar") threads the literal name into validateBarSeries).
 func barSeriesDiagnostics(b *Box, series interface{}) []Diagnostic {
-	name := resolvedBarName(b.Renderer)
+	name := b.Renderer
 	emit := func(code Code, msg string) []Diagnostic {
 		return []Diagnostic{{
 			Code:     code,
