@@ -38,6 +38,7 @@ class VNode {
   removeAttribute(k) {
     delete this.attrs[k];
   }
+  remove() {}
   append(...kids) {
     for (const k of kids) this.children.push(k);
   }
@@ -114,6 +115,9 @@ const render = (src) => {
     out += n._textContent || "";
   };
   for (const c of pre.children) emit(c);
+  // Append any toast text so fixtures can assert on surfaced errors.
+  const toast = el.children?.find((c) => c.className === "pylon-toast");
+  if (toast) out += "\n[toast] " + toast.textContent;
   return out;
 };
 
@@ -163,11 +167,110 @@ const fixtures = [
     expect: (o) =>
       o.includes("+") && o.includes("|   Hello   |") && !o.includes("┌"),
   },
+  {
+    name: "text renderer stringifies a resolved @ref",
+    src: "---\ndata:\n  - x: 1\n    y: 10\n---\n[- @data | text -]",
+    expect: (o) => o.includes('[{"x":1,"y":10}]'),
+  },
+  {
+    name: "bar renderer draws horizontal bars with value labels",
+    src: "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n  - x: 3\n    y: 15\n---\n[ @data | bar ]",
+    expect: (o) => {
+      const bars = (o.match(/█/g) || []).length;
+      return (
+        bars >= 12 &&
+        o.includes("(10)") &&
+        o.includes("(20)") &&
+        o.includes("(15)")
+      );
+    },
+  },
+  {
+    name: "bar renderer rejects raw-string input inline",
+    src: "[ hello | bar ]",
+    expect: (o) => o.includes("⚠ bar: use @ref"),
+  },
+  {
+    name: "bar renderer accepts unquoted-string x labels",
+    src: "---\ndata:\n  - x: apples\n    y: 10\n  - x: bananas\n    y: 20\n---\n[ @data | bar ]",
+    expect: (o) => {
+      const bars = (o.match(/█/g) || []).length;
+      return (
+        bars >= 10 &&
+        o.includes("  apples") &&
+        o.includes("bananas") &&
+        o.includes("(10)") &&
+        o.includes("(20)")
+      );
+    },
+  },
+  {
+    name: "bar renderer rejects duplicate x values inline",
+    src: "---\ndata:\n  - x: a\n    y: 2\n  - x: a\n    y: 10\n---\n[ @data | bar ]",
+    // The error prefix mirrors the renderer name the user actually
+    // typed -- `bar` stays `bar`, it does not leak the `hbar` alias
+    // target.
+    expect: (o) => o.includes('⚠ bar: duplicate x "a"') && !o.includes("█"),
+  },
+  {
+    name: "tab-indented data: frontmatter rejects with toast",
+    src: "---\ndata:\n\t- x: 1\n\t  y: 10\n---\n[- @data | text -]",
+    expect: (o) =>
+      o.includes("[toast]") && o.includes("Unsupported data: frontmatter"),
+  },
+  {
+    name: "vbar renderer draws vertical bars",
+    src: "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n  - x: 3\n    y: 15\n---\n[ @data | vbar ]",
+    expect: (o) => {
+      if (!o.includes("\u2588")) return false;
+      if (!o.includes("(10)") || !o.includes("(20)") || !o.includes("(15)")) {
+        return false;
+      }
+      // x labels "1", "2", "3" on the line above the (y) value row.
+      const lines = o.split("\n");
+      const valLine = lines.findIndex((l) => l.includes("(10)"));
+      if (valLine < 1) return false;
+      const labelLine = lines[valLine - 1];
+      return (
+        labelLine.includes("1") &&
+        labelLine.includes("2") &&
+        labelLine.includes("3")
+      );
+    },
+  },
+  {
+    name: "bar is an alias for hbar",
+    src: null,
+    expect: () => true,
+    // Custom runner: rendered twice, compared.
+    custom: () => {
+      const base =
+        "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n---\n";
+      const a = render(base + "[ @data | bar ]");
+      const b = render(base + "[ @data | hbar ]");
+      return a === b;
+    },
+  },
+  {
+    name: "vbar renderer rejects duplicate x values inline",
+    src: "---\ndata:\n  - x: a\n    y: 2\n  - x: a\n    y: 10\n---\n[ @data | vbar ]",
+    expect: (o) =>
+      o.includes('\u26a0 vbar: duplicate x "a"') && !o.includes("\u2588"),
+  },
 ];
 
 let failed = 0;
 for (const f of fixtures) {
   try {
+    if (f.custom) {
+      if (!f.custom()) {
+        failed++;
+        console.error(`FAIL: ${f.name}`);
+      } else {
+        console.log(`ok  : ${f.name}`);
+      }
+      continue;
+    }
     const out = render(f.src);
     if (!f.expect(out)) {
       failed++;
