@@ -14,22 +14,49 @@ var frontmatterRe = regexp.MustCompile(`(?s)\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\
 // to DefaultExample; a leading `---...---` block is parsed as
 // frontmatter metadata attached to the returned root.
 func Parse(source string) AST {
-	src := strings.TrimSpace(source)
-	if src == "" {
+	if strings.TrimSpace(source) == "" {
 		return Parse(DefaultExample)
 	}
-	var meta Meta
-	body := src
-	if fm := frontmatterRe.FindStringSubmatchIndex(src); fm != nil {
-		inner := src[fm[2]:fm[3]]
-		meta = parseFrontmatter(inner)
-		body = strings.TrimSpace(src[fm[1]:])
-		if body == "" {
-			body = DefaultExample
-		}
-	}
+	top := NewSource(source)
+	// Absolute offset of the trimmed source within the original text.
+	// TrimSpace strips leading whitespace (including newlines); Positions
+	// must reference the untrimmed source so LSP ranges line up with the
+	// document as the editor sees it.
+	trimLead := len(source) - len(strings.TrimLeft(source, " \t\r\n"))
+	srcTrimmed := strings.TrimSpace(source)
 
-	items := parseItems(body)
+	var meta Meta
+	body := srcTrimmed
+	bodyRelToTrimmed := 0
+	if fm := frontmatterRe.FindStringSubmatchIndex(srcTrimmed); fm != nil {
+		inner := srcTrimmed[fm[2]:fm[3]]
+		meta = parseFrontmatter(inner)
+		afterFM := srcTrimmed[fm[1]:]
+		// Body starts at the first non-whitespace byte after the closing
+		// `---` fence, matching strings.TrimSpace semantics.
+		lead := len(afterFM) - len(strings.TrimLeft(afterFM, " \t\r\n"))
+		bodyRelToTrimmed = fm[1] + lead
+		body = strings.TrimSpace(afterFM)
+	}
+	if body == "" {
+		// Frontmatter-only input: render the default example, but keep
+		// the parsed Meta from the real source. Spans for the default
+		// example reference the default text (the user's source has no
+		// body to address).
+		defSrc := NewSource(DefaultExample)
+		root := buildRoot(defSrc, DefaultExample, meta)
+		return root
+	}
+	bodyAbs := trimLead + bodyRelToTrimmed
+	bodySrc := top.Sub(bodyAbs, bodyAbs+len(body))
+	return buildRoot(bodySrc, body, meta)
+}
+
+// buildRoot shared tail of Parse: run parseItems, decide whether the
+// single-item shortcut applies, synthesise a root box otherwise, then
+// run name collection / ref resolution.
+func buildRoot(bodySrc *Source, body string, meta Meta) *Box {
+	items := parseItems(bodySrc)
 	var root *Box
 	if len(items) == 1 {
 		if b, ok := items[0].(*Box); ok {
@@ -47,6 +74,7 @@ func Parse(source string) AST {
 			Bordered: bareText,
 			Align:    AlignCenter,
 			Items:    items,
+			Span:     bodySrc.SpanOf(0, len(body)),
 		}
 	}
 	root.Meta = meta
@@ -93,7 +121,12 @@ var (
 // parseItems turns the inner content of a box into a slice of child
 // nodes. Newlines separate items vertically; lines containing at
 // least one edge token wrap into a *Row.
-func parseItems(s string) []Node {
+//
+// src is a view over the body text the caller wants parsed. All Span
+// fields populated on returned nodes reference absolute positions in
+// the original source (via src's base + linePrefix).
+func parseItems(src *Source) []Node {
+	view := src.View()
 	items := []Node{}
 	var lineItems []Node
 	var textBuf strings.Builder
@@ -128,27 +161,32 @@ func parseItems(s string) []Node {
 	}
 
 	i := 0
-	for i < len(s) {
-		c := s[i]
+	for i < len(view) {
+		c := view[i]
 		switch {
 		case c == '[' || c == '(':
 			flushText()
-			end := findMatching(s, i)
+			end := findMatching(view, i)
 			if end < 0 {
 				textBuf.WriteByte(c)
 				i++
 				continue
 			}
-			lineItems = append(lineItems, parseBracketedNode(s[i:end+1]))
+			sub := src.Sub(i, end+1)
+			lineItems = append(lineItems, parseBracketedNode(sub))
 			i = end + 1
 		case c == '\n':
 			flushLine()
 			i++
 		case c == '&':
-			if m := refRe.FindStringSubmatch(s[i:]); m != nil {
+			if m := refRe.FindStringSubmatch(view[i:]); m != nil {
 				flushText()
-				lineItems = append(lineItems, &Ref{Name: m[1]})
-				i += len(m[0])
+				refLen := len(m[0])
+				lineItems = append(lineItems, &Ref{
+					Name: m[1],
+					Span: src.SpanOf(i, i+refLen),
+				})
+				i += refLen
 				continue
 			}
 			textBuf.WriteByte(c)
@@ -156,25 +194,29 @@ func parseItems(s string) []Node {
 		case c == '@':
 			prevCh := byte(0)
 			if i > 0 {
-				prevCh = s[i-1]
+				prevCh = view[i-1]
 			}
-			identMatch := dataRefIdentRe.FindStringSubmatch(s[i+1:])
+			identMatch := dataRefIdentRe.FindStringSubmatch(view[i+1:])
 			if identMatch != nil {
 				var nextCh byte
-				if i+1+len(identMatch[0]) < len(s) {
-					nextCh = s[i+1+len(identMatch[0])]
+				if i+1+len(identMatch[0]) < len(view) {
+					nextCh = view[i+1+len(identMatch[0])]
 				}
 				if isDataRefBoundary(prevCh, nextCh) {
 					flushText()
-					lineItems = append(lineItems, &DataRef{Name: identMatch[1]})
-					i += 1 + len(identMatch[0])
+					drefLen := 1 + len(identMatch[0])
+					lineItems = append(lineItems, &DataRef{
+						Name: identMatch[1],
+						Span: src.SpanOf(i, i+drefLen),
+					})
+					i += drefLen
 					continue
 				}
 			}
 			textBuf.WriteByte(c)
 			i++
 		case c == '<' || c == '-':
-			match := edgeRe.FindString(s[i:])
+			match := edgeRe.FindString(view[i:])
 			hasLeft := strings.HasPrefix(match, "<")
 			hasRight := strings.HasSuffix(match, ">")
 			if match != "" && (hasLeft || hasRight) {
@@ -256,14 +298,17 @@ func isDataRefBoundary(prev, next byte) bool {
 	return false
 }
 
-// parseBracketedNode parses a single `[...]` / `(...)` slice, returning
-// a *Box. Handles alignment markers, `::` name declaration, `| renderer`
-// trailing marker, then recurses into the remaining body.
-func parseBracketedNode(s string) *Box {
-	if len(s) == 0 {
-		return &Box{Bordered: true, Align: AlignCenter}
+// parseBracketedNode parses a single `[...]` / `(...)` Source view,
+// returning a *Box with Span covering the full bracketed range.
+// Handles alignment markers, `::` name declaration, `| renderer`
+// trailing marker, then recurses into the remaining body via a
+// sub-Source so nested nodes carry absolute positions.
+func parseBracketedNode(src *Source) *Box {
+	view := src.View()
+	if len(view) == 0 {
+		return &Box{Bordered: true, Align: AlignCenter, Span: src.SpanOf(0, 0)}
 	}
-	open := s[0]
+	open := view[0]
 	bordered := open == '['
 	var closeCh byte
 	if bordered {
@@ -271,14 +316,15 @@ func parseBracketedNode(s string) *Box {
 	} else {
 		closeCh = ')'
 	}
-	if s[len(s)-1] != closeCh {
+	if view[len(view)-1] != closeCh {
 		return &Box{
 			Bordered: true,
 			Align:    AlignCenter,
-			Items:    []Node{&Text{Content: strings.TrimSpace(s)}},
+			Items:    []Node{&Text{Content: strings.TrimSpace(view)}},
+			Span:     src.SpanOf(0, len(view)),
 		}
 	}
-	inner := s[1 : len(s)-1]
+	inner := view[1 : len(view)-1]
 	align, clean := extractAlign(inner)
 	body := clean
 	var name string
@@ -291,10 +337,29 @@ func parseBracketedNode(s string) *Box {
 		renderer = body[m[2]:m[3]]
 		body = strings.TrimRight(body[:m[0]], " \t")
 	}
+
+	var items []Node
+	if body != "" {
+		// Locate body within the bracketed view so recursion carries
+		// absolute source positions. body is always a prefix of clean
+		// (name / renderer stripped from the tail only); clean's
+		// leading whitespace/dashes are stripped from inner. Finding
+		// clean's start via strings.Index is reliable because clean is
+		// the distinctive content between the alignment markers.
+		cleanStart := strings.Index(inner, clean)
+		if cleanStart < 0 {
+			cleanStart = 0
+		}
+		bodyAbs := 1 + cleanStart // 1 for the opening bracket
+		bodySrc := src.Sub(bodyAbs, bodyAbs+len(body))
+		items = parseItems(bodySrc)
+	}
+
 	box := &Box{
 		Bordered: bordered,
 		Align:    align,
-		Items:    parseItems(body),
+		Items:    items,
+		Span:     src.SpanOf(0, len(view)),
 	}
 	if name != "" {
 		box.Name = name

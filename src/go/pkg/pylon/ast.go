@@ -41,6 +41,12 @@ type Box struct {
 	// Errors carries parse-shape errors (toast-path) surfaced by the
 	// root node. Never populated for nested boxes.
 	Errors []string
+	// Span covers the full bracketed (or parenthesised) range, from the
+	// opening `[` / `(` through the closing `]` / `)`. The synthetic
+	// root box that wraps a bare text source has Span covering the
+	// whole input. Zero Span means span-free (the synthetic root for
+	// the empty-source fallback before re-parse).
+	Span Span
 }
 
 func (*Box) isNode() {}
@@ -87,6 +93,9 @@ type Ref struct {
 	CrossRow   bool
 	Target     *Box
 	SourceBox  *Box
+
+	// Span covers the literal `&ident` token (sigil + identifier).
+	Span Span
 }
 
 func (*Ref) isNode() {}
@@ -94,6 +103,8 @@ func (*Ref) isNode() {}
 // DataRef is an `@ident` data reference inside a box body.
 type DataRef struct {
 	Name string
+	// Span covers the literal `@ident` token (sigil + identifier).
+	Span Span
 }
 
 func (*DataRef) isNode() {}
