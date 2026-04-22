@@ -125,3 +125,12 @@ This project follows the DDD (Dream-Driven Development) methodology, which means
 is driven by what I envision.
 
 All features are based on my needs and my dreams.
+
+## License
+
+Pylon is released under the [MIT License](LICENSE).
+
+The bundled [JetBrains Mono Regular](src/go/pkg/pylon/assets/JetBrainsMono-Regular.ttf) TTF
+(embedded in the Go CLI's PNG renderer) ships under the **SIL Open Font License 1.1**;
+the full text is in
+[`src/go/pkg/pylon/assets/JetBrainsMono-OFL.txt`](src/go/pkg/pylon/assets/JetBrainsMono-OFL.txt).
