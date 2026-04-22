@@ -9,6 +9,12 @@ uses. Companion to [`SPEC.md`](SPEC.md) (grammar + error model) and
 
 ## Install
 
+Pre-built `pylon-lsp` binaries for linux (amd64, arm64) and macOS
+(Intel, Apple Silicon) ship alongside the `pylon` CLI on each
+release — download from
+<https://github.com/cmj0121/pylon/releases> and drop the binary
+onto your `$PATH`. On other platforms, build from source:
+
 ```sh
 go install github.com/cmj0121/pylon/src/go/cmd/pylon-lsp@latest
 ```
