@@ -127,12 +127,29 @@ func lineFor(linePrefix []int, abs int) int {
 // UTF-8; each rune contributes utf16.RuneLen code units (1 for BMP,
 // 2 for supplementary-plane runes). Invalid UTF-8 is counted as one
 // code unit per byte to stay deterministic.
+//
+// ASCII fast path: when every byte in [lineStart, abs) is < 0x80 the
+// byte count equals the UTF-16 code-unit count, so we return the
+// distance directly. This is the common case — pylon source is
+// mostly ASCII — and every Span in the parser's hot path hits this
+// function twice.
 func utf16ColumnAt(s string, lineStart, abs int) int {
 	if abs <= lineStart {
 		return 0
 	}
 	if abs > len(s) {
 		abs = len(s)
+	}
+	slice := s[lineStart:abs]
+	allASCII := true
+	for i := 0; i < len(slice); i++ {
+		if slice[i] >= 0x80 {
+			allASCII = false
+			break
+		}
+	}
+	if allASCII {
+		return len(slice)
 	}
 	col := 0
 	i := lineStart

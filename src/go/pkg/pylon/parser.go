@@ -345,7 +345,7 @@ func parseBracketedNode(src *Source) *Box {
 		}
 	}
 	inner := view[1 : len(view)-1]
-	align, clean := extractAlign(inner)
+	align, clean, cleanStart := extractAlign(inner)
 	body := clean
 	var name string
 	if m := nameDeclRe.FindStringSubmatchIndex(clean); m != nil {
@@ -360,17 +360,11 @@ func parseBracketedNode(src *Source) *Box {
 
 	var items []Node
 	if body != "" {
-		// Locate body within the bracketed view so recursion carries
-		// absolute source positions. body is always a prefix of clean
-		// (name / renderer stripped from the tail only); clean's
-		// leading whitespace/dashes are stripped from inner. Finding
-		// clean's start via strings.Index is reliable because clean is
-		// the distinctive content between the alignment markers.
-		cleanStart := strings.Index(inner, clean)
-		if cleanStart < 0 {
-			cleanStart = 0
-		}
-		bodyAbs := 1 + cleanStart // 1 for the opening bracket
+		// body is always a prefix of clean (name / renderer are
+		// stripped from the tail only), and extractAlign already told
+		// us where clean sits inside inner. 1 accounts for the
+		// opening bracket byte at view[0].
+		bodyAbs := 1 + cleanStart
 		bodySrc := src.Sub(bodyAbs, bodyAbs+len(body))
 		items = parseItems(bodySrc)
 	}
@@ -397,22 +391,35 @@ func parseBracketedNode(src *Source) *Box {
 }
 
 // extractAlign strips leading `-\s+` / trailing `\s+-` alignment
-// markers from the inner string and returns (align, cleaned).
-func extractAlign(inner string) (string, string) {
-	hasLeft := alignLeftRe.MatchString(inner)
-	hasRight := alignRightRe.MatchString(inner)
+// markers from inner and returns (align, cleaned, cleanedStart). The
+// cleanedStart offset is the byte index of cleaned[0] within inner,
+// so callers can map positions back without an O(n·m) substring
+// search. cleaned may be empty when the body between the alignment
+// markers is whitespace-only.
+func extractAlign(inner string) (string, string, int) {
+	leftLoc := alignLeftRe.FindStringIndex(inner)   // nil or [0, n]
+	rightLoc := alignRightRe.FindStringIndex(inner) // nil or [m, len(inner)]
 	align := AlignCenter
 	switch {
-	case hasLeft && !hasRight:
+	case leftLoc != nil && rightLoc == nil:
 		align = AlignRight
-	case !hasLeft && hasRight:
+	case leftLoc == nil && rightLoc != nil:
 		align = AlignLeft
 	}
-	cleaned := inner
-	cleaned = alignLeftRe.ReplaceAllString(cleaned, "")
-	cleaned = alignRightRe.ReplaceAllString(cleaned, "")
-	cleaned = strings.TrimSpace(cleaned)
-	return align, cleaned
+	lo := 0
+	hi := len(inner)
+	if leftLoc != nil {
+		lo = leftLoc[1]
+	}
+	if rightLoc != nil {
+		hi = rightLoc[0]
+	}
+	middle := inner[lo:hi]
+	// Mirror the previous strings.TrimSpace(cleaned) behaviour and
+	// report the absolute start of the surviving content.
+	lead := len(middle) - len(strings.TrimLeft(middle, " \t\n\r"))
+	trail := len(middle) - len(strings.TrimRight(middle, " \t\n\r"))
+	return align, middle[lead : len(middle)-trail], lo + lead
 }
 
 // stitchLabeledEdges collapses the 3-item `dashes/edge + borderless-box

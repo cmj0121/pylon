@@ -36,10 +36,13 @@ func Run() error {
 	handler := buildProtocolHandler(store, handlers)
 	srv := server.NewServer(&handler, lsName, false)
 
-	// glsp recovers from handler panics internally (errors are logged
-	// and the server continues). We wrap RunStdio in a defer so a
-	// deeper panic surfaces as a stderr log + non-zero exit rather
-	// than a silent crash that confuses the client.
+	// defer recover() only covers the Run goroutine (startup, glsp's
+	// own dispatch loop setup, and shutdown). Handler goroutines
+	// spawned by jsonrpc2 aren't covered here and rely on the glsp /
+	// jsonrpc2 layers for their own recovery; a panic in onDidChange
+	// will still crash the server, and the client is expected to
+	// restart us. Adding per-handler recover() is a feat/pylon-lsp-ux
+	// follow-up.
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().Interface("panic", r).Msg("pylon-lsp: recovered from panic")

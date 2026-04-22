@@ -28,14 +28,14 @@ func NewHandlers(store *Store) *Handlers {
 
 // Diagnostics returns the cached pylon diagnostics for uri translated
 // into the LSP protocol shape. Translation only — Parse + Validate
-// ran when the Store.Open / Change notification landed. Returns nil
-// for unknown URIs; returns an empty slice (not nil) when the cached
-// document has no diagnostics, so callers can distinguish "clean
-// state" from "unknown document" without an extra probe.
+// ran when the Store.Open / Change notification landed. Always
+// returns a non-nil slice: unknown URIs and clean docs both yield an
+// empty slice, which the publish path forwards directly as a
+// `diagnostics: []` clear.
 func (h *Handlers) Diagnostics(uri string) []protocol.Diagnostic {
 	doc, ok := h.Store.Get(uri)
 	if !ok {
-		return nil
+		return []protocol.Diagnostic{}
 	}
 	out := make([]protocol.Diagnostic, 0, len(doc.Diagnostics))
 	for _, d := range doc.Diagnostics {

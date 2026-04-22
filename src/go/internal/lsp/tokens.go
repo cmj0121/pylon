@@ -108,9 +108,9 @@ func collectSemanticTokens(root pylon.AST) []semanticToken {
 				visit(x.Label)
 			}
 		case *pylon.Ref:
-			emitRefToken(&out, x)
+			emitVariableToken(&out, x.Span, 0)
 		case *pylon.DataRef:
-			emitDataRefToken(&out, x)
+			emitVariableToken(&out, x.Span, modReadonly)
 		}
 	}
 	visit(root)
@@ -147,34 +147,21 @@ func emitBracketTokens(out *[]semanticToken, b *pylon.Box) {
 	})
 }
 
-// emitRefToken emits a variable token covering the literal `&ident`.
-// Refs are single-line by construction (grammar admits no newline in
-// an identifier) so a single token per Ref is sufficient.
-func emitRefToken(out *[]semanticToken, r *pylon.Ref) {
-	if r.Span == (pylon.Span{}) || r.Span.Start.Line != r.Span.End.Line {
+// emitVariableToken emits a single-line variable token covering span.
+// Ref and DataRef share this shape (grammar admits no newline in an
+// identifier, so one token per ref is sufficient); DataRef tags its
+// token with modReadonly because frontmatter data isn't writable from
+// a box body. Zero-span and multi-line spans are dropped defensively.
+func emitVariableToken(out *[]semanticToken, span pylon.Span, modifiers uint32) {
+	if span == (pylon.Span{}) || span.Start.Line != span.End.Line {
 		return
 	}
 	*out = append(*out, semanticToken{
-		Line:      uint32(r.Span.Start.Line),
-		StartChar: uint32(r.Span.Start.Column),
-		Length:    uint32(r.Span.End.Column - r.Span.Start.Column),
+		Line:      uint32(span.Start.Line),
+		StartChar: uint32(span.Start.Column),
+		Length:    uint32(span.End.Column - span.Start.Column),
 		TokenType: tokTypeVariable,
-	})
-}
-
-// emitDataRefToken is the @ref counterpart — same shape as ref but
-// carries the readonly modifier because frontmatter data is not
-// user-writable from a box body.
-func emitDataRefToken(out *[]semanticToken, d *pylon.DataRef) {
-	if d.Span == (pylon.Span{}) || d.Span.Start.Line != d.Span.End.Line {
-		return
-	}
-	*out = append(*out, semanticToken{
-		Line:      uint32(d.Span.Start.Line),
-		StartChar: uint32(d.Span.Start.Column),
-		Length:    uint32(d.Span.End.Column - d.Span.Start.Column),
-		TokenType: tokTypeVariable,
-		Modifiers: modReadonly,
+		Modifiers: modifiers,
 	})
 }
 

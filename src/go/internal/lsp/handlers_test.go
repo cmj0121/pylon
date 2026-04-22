@@ -18,8 +18,8 @@ func TestHandlersEmpty(t *testing.T) {
 		}
 	}()
 
-	if got := h.Diagnostics(uri); got != nil {
-		t.Errorf("Diagnostics(missing)=%v, want nil", got)
+	if got := h.Diagnostics(uri); got == nil || len(got) != 0 {
+		t.Errorf("Diagnostics(missing)=%v, want empty slice", got)
 	}
 	if got := h.DocumentSymbols(uri); got != nil {
 		t.Errorf("DocumentSymbols(missing)=%v, want nil", got)
