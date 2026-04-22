@@ -27,10 +27,11 @@ type Document struct {
 }
 
 // Store is the URI-keyed document cache. Handlers read under RLock;
-// Open / Change / Close mutate under Lock. Parse + Validate run inside
-// the mutation's critical section — cheap on pylon-scale files
-// (microseconds) and keeps the Document snapshot self-consistent for
-// every reader.
+// Open / Change / Close mutate under Lock. Parse + Validate run BEFORE
+// the critical section — the fresh Document is built as a local value
+// and swapped into the map atomically, so the critical section stays
+// short and concurrent readers always observe either the old or the
+// new Document (never a torn state).
 type Store struct {
 	mu   sync.RWMutex
 	docs map[string]*Document
@@ -41,9 +42,10 @@ func NewStore() *Store {
 	return &Store{docs: map[string]*Document{}}
 }
 
-// Open records a newly-opened document, parsing and validating under
-// Lock so Document.AST and Document.Diagnostics are ready for the
-// first handler read.
+// Open records a newly-opened document. Parse + Validate run outside
+// the Lock; the resulting Document is then swapped into the map in a
+// short critical section so the first handler read observes fully
+// populated AST + Diagnostics.
 func (s *Store) Open(uri string, version int32, text string) {
 	doc := buildDocument(uri, version, text)
 	s.mu.Lock()
@@ -80,8 +82,9 @@ func (s *Store) Get(uri string) (*Document, bool) {
 }
 
 // buildDocument parses and validates the source, returning a Document
-// with AST + Diagnostics populated. Runs outside the Store mutex so
-// the critical section stays short.
+// with AST + Diagnostics populated. Callers invoke this outside the
+// Store mutex so the critical section stays bounded to a single map
+// write.
 func buildDocument(uri string, version int32, text string) *Document {
 	ast := pylon.Parse(text)
 	diags := pylon.Validate(ast)
