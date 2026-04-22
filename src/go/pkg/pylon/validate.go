@@ -7,13 +7,18 @@ import (
 
 // Validate walks a parsed AST and returns the complete diagnostic set.
 // Emission order is stable — frontmatter first, then ref (names/refs),
-// then renderer, then bar data. Pure: never mutates the AST, never
-// invokes a renderer.
+// then renderer structural, then bar-data. Pure: never mutates the
+// AST, never invokes a renderer.
 //
 // Messages are byte-identical to the JS reference implementation so
 // the CI parity gate can diff them directly. Inline (SeverityWarning)
 // diagnostics carry the `⚠ ` prefix to match JS's box-level rewrite
 // behaviour — editors and the LSP layer can strip it if they prefer.
+//
+// Wire text for renderer-level diagnostics flows through
+// rendererInlineError so the validator and the chart renderer cannot
+// drift on wording. Any new renderer-class diagnostic must extend
+// that helper rather than building a string inline.
 func Validate(ast AST) []Diagnostic {
 	if ast == nil {
 		return nil
@@ -22,7 +27,6 @@ func Validate(ast AST) []Diagnostic {
 	out = append(out, validateFrontmatter(ast.Meta)...)
 	out = append(out, validateNames(ast)...)
 	out = append(out, validateRenderers(ast)...)
-	out = append(out, validateBarData(ast)...)
 	return out
 }
 
@@ -84,119 +88,101 @@ var knownRenderers = map[string]bool{
 }
 
 // validateRenderers walks every Box (including those inside Edge
-// labels) and emits renderer-related diagnostics: unknown renderer,
-// raw-string-to-non-text, bare @ref without renderer, and missing
-// data series.
+// labels) and emits every renderer-level diagnostic: unknown
+// renderer, raw-string-to-non-text, bare @ref without renderer,
+// missing data series, and the bar-series shape checks.
+//
+// The walk visits each Box once and asks rendererInlineError for the
+// single diagnostic that applies. Structural errors (unknown/use-at-
+// ref/bare/not-found) are collected ahead of bar-series errors so
+// the stable top-level emission order (frontmatter → names →
+// renderer structural → bar-data) is preserved — the parity-
+// diagnostics gate depends on that ordering.
 func validateRenderers(root *Box) []Diagnostic {
-	out := []Diagnostic{}
+	structural := []Diagnostic{}
+	series := []Diagnostic{}
 	walkBoxes(root, func(b *Box) {
-		out = append(out, rendererDiagnosticsForBox(b, root.Meta)...)
+		code, msg, ok := rendererInlineError(b, root.Meta)
+		if !ok {
+			return
+		}
+		d := Diagnostic{
+			Code:     code,
+			Severity: SeverityWarning,
+			Message:  msg,
+			Span:     rendererInlineErrorSpan(b, code),
+			BoxSpan:  b.Span,
+		}
+		if isBarSeriesCode(code) {
+			series = append(series, d)
+		} else {
+			structural = append(structural, d)
+		}
 	})
-	return out
+	return append(structural, series...)
 }
 
-// rendererDiagnosticsForBox inspects a single Box for renderer-level
-// issues. Flat (no recursion); walkBoxes drives the traversal.
-func rendererDiagnosticsForBox(b *Box, meta Meta) []Diagnostic {
+// rendererInlineError returns the diagnostic code and wire message
+// for the renderer-level error that applies to b, or ok=false when
+// b is renderer-clean. The message includes the leading `⚠ ` glyph
+// and is byte-identical to what the JS reference emits both as a
+// diagnostic and as the inline first line of a failed chart body.
+//
+// This helper is the single source of truth for renderer-level
+// wire text: the validator wraps the result into a Diagnostic and
+// the chart renderer emits the same string verbatim as the body of
+// the offending box. Any future renderer or validator code that
+// builds a `⚠ …` string MUST go through this helper or its
+// behaviour will drift from the other surface.
+//
+// Bar-family diagnostics carry the user-typed renderer name
+// (`bar`, `hbar`, or `vbar`) verbatim — the `bar` alias keeps its
+// literal name rather than resolving to the internal `hbar`,
+// mirroring what the user actually typed.
+func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 	if b.Renderer == "" {
 		// Bare @ref: any DataRef child in a box without a renderer is
-		// a user error. JS emits a single inline warning per box,
-		// naming the first DataRef.
+		// a user error. Emit a single inline warning naming the first
+		// DataRef; subsequent refs in the same box are silent.
 		ref := firstDataRef(b)
 		if ref == nil {
-			return nil
+			return "", "", false
 		}
-		return []Diagnostic{{
-			Code:     CodeBareDataRef,
-			Severity: SeverityWarning,
-			Message:  "⚠ @" + ref.Name + ": requires | renderer",
-			Span:     ref.Span,
-			BoxSpan:  b.Span,
-		}}
+		return CodeBareDataRef, "⚠ @" + ref.Name + ": requires | renderer", true
 	}
 
 	if !knownRenderers[b.Renderer] {
-		return []Diagnostic{{
-			Code:     CodeUnknownRenderer,
-			Severity: SeverityWarning,
-			Message:  "⚠ unknown renderer: " + b.Renderer,
-			Span:     b.Span,
-			BoxSpan:  b.Span,
-		}}
+		return CodeUnknownRenderer, "⚠ unknown renderer: " + b.Renderer, true
 	}
 
 	if b.Renderer == "text" {
-		// text accepts anything; no further checks.
-		return nil
+		// text accepts anything.
+		return "", "", false
 	}
 
 	// bar / hbar / vbar: require a DataRef child.
 	ref := firstDataRef(b)
 	if ref == nil {
-		return []Diagnostic{{
-			Code:     CodeUseAtRef,
-			Severity: SeverityWarning,
-			Message:  "⚠ " + b.Renderer + ": use @ref",
-			Span:     b.Span,
-			BoxSpan:  b.Span,
-		}}
+		return CodeUseAtRef, "⚠ " + b.Renderer + ": use @ref", true
 	}
 
 	// DataRef present — resolve against meta.Data.
-	if _, ok := lookupSeries(meta.Data, ref.Name); !ok {
-		return []Diagnostic{{
-			Code:     CodeDataNotFound,
-			Severity: SeverityWarning,
-			Message:  "⚠ @" + ref.Name + " not found",
-			Span:     ref.Span,
-			BoxSpan:  b.Span,
-		}}
+	series, ok := lookupSeries(meta.Data, ref.Name)
+	if !ok {
+		return CodeDataNotFound, "⚠ @" + ref.Name + " not found", true
 	}
 
-	return nil
+	return barSeriesInlineError(b.Renderer, series)
 }
 
-// validateBarData walks bar-family boxes with a resolved DataRef and
-// checks the series shape / contents. Errors use the resolved
-// renderer name (bar → hbar) to match JS's dispatch.
-func validateBarData(root *Box) []Diagnostic {
-	out := []Diagnostic{}
-	walkBoxes(root, func(b *Box) {
-		if b.Renderer == "" || b.Renderer == "text" {
-			return
-		}
-		if !knownRenderers[b.Renderer] {
-			return
-		}
-		ref := firstDataRef(b)
-		if ref == nil {
-			return
-		}
-		series, ok := lookupSeries(root.Meta.Data, ref.Name)
-		if !ok {
-			return
-		}
-		out = append(out, barSeriesDiagnostics(b, series)...)
-	})
-	return out
-}
-
-// barSeriesDiagnostics validates a resolved series against the
-// bar-family shape rules. Emits at most one diagnostic (the first
-// violation) to mirror JS's short-circuit. The renderer name threads
-// through verbatim — `bar` stays `bar` in error messages to match
-// what the user actually typed (JS: renderHBar(refValue, bc, budgetW,
-// "bar") threads the literal name into validateBarSeries).
-func barSeriesDiagnostics(b *Box, series interface{}) []Diagnostic {
-	name := b.Renderer
-	emit := func(code Code, msg string) []Diagnostic {
-		return []Diagnostic{{
-			Code:     code,
-			Severity: SeverityWarning,
-			Message:  "⚠ " + name + ": " + msg,
-			Span:     b.Span,
-			BoxSpan:  b.Span,
-		}}
+// barSeriesInlineError validates a resolved series against the
+// bar-family shape rules. Returns ok=false when the series is clean;
+// otherwise returns the first violation (matching JS's short-
+// circuit). The name argument is the user-typed renderer name and
+// threads through verbatim.
+func barSeriesInlineError(name string, series interface{}) (Code, string, bool) {
+	emit := func(code Code, reason string) (Code, string, bool) {
+		return code, "⚠ " + name + ": " + reason, true
 	}
 
 	arr, ok := series.([]map[string]interface{})
@@ -229,7 +215,33 @@ func barSeriesDiagnostics(b *Box, series interface{}) []Diagnostic {
 		}
 		seen[xKey] = true
 	}
-	return nil
+	return "", "", false
+}
+
+// rendererInlineErrorSpan picks the narrow Span for a renderer-level
+// diagnostic. Bare-ref and data-not-found point at the offending
+// DataRef token; every other class points at the enclosing box.
+// Kept out of rendererInlineError so the helper can stay focused on
+// the wire string.
+func rendererInlineErrorSpan(b *Box, code Code) Span {
+	if code == CodeBareDataRef || code == CodeDataNotFound {
+		if ref := firstDataRef(b); ref != nil {
+			return ref.Span
+		}
+	}
+	return b.Span
+}
+
+// isBarSeriesCode reports whether code is one of the bar-series
+// shape/empty/negative/duplicate classes. Used to preserve the
+// top-level emission order (structural renderer errors ahead of
+// bar-data errors) while still visiting each Box only once.
+func isBarSeriesCode(code Code) bool {
+	switch code {
+	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX:
+		return true
+	}
+	return false
 }
 
 // firstDataRef returns the first *DataRef among a box's Items (or
