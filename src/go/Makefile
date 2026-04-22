@@ -64,6 +64,9 @@ parity: $(PYLON)				# byte-compare ASCII output of Go vs JS on the same fixtures
 parity-diagnostics: $(PYLON_DUMP_DIAG)		# diff JS and Go diagnostic sets over the bad-input corpus
 	@../../scripts/pylon-diagnostics-parity.sh
 
+release-snapshot:				# build local release snapshot via goreleaser (no publish)
+	@goreleaser release --snapshot --clean --skip=publish
+
 help:						# show this message
 	@printf "Usage: make -C src/go [OPTION]\n"
 	@printf "\n"

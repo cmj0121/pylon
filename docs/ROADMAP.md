@@ -61,11 +61,15 @@ shipped.
 
 ## Release engineering
 
-1. **No release workflow.** `.github/workflows/` contains only
-   `ci.yml` (PR-triggered) and `pages.yml` (tag-triggered, Pages
-   only). No cross-platform binary build and no `gh release` asset
-   upload; every user needs Go 1.25+ to install the CLI. Status:
-   deferred.
+1. **Release workflow — CLOSED.** `.github/workflows/release.yml`
+   ships pre-built `pylon` and `pylon-lsp` binaries for 4 platforms
+   (`linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`)
+   on every `v*` tag push via goreleaser, with SHA256 checksums and
+   tar.gz archives. Pre-release tags (e.g. `v0.3.0-rc.1`) land as
+   GitHub pre-releases automatically. Windows and other platforms
+   remain `go install` territory. Status: **closed**.
+   Ref: [`../.goreleaser.yaml`](../.goreleaser.yaml),
+   [`../.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 2. **`--version` flag — CLOSED.** Both `pylon` and `pylon-lsp`
    print a build-time version string (populated by the Makefile

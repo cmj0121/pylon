@@ -69,6 +69,15 @@ Live demo: <https://cmj0121.github.io/pylon/>.
 
 ### Command line
 
+Pre-built `pylon` (and `pylon-lsp`) binaries for linux (amd64,
+arm64) and macOS (Intel, Apple Silicon) are published on each
+release — download from
+<https://github.com/cmj0121/pylon/releases>, extract the `tar.gz`,
+and drop the binary somewhere on your `$PATH`.
+
+On other platforms (Windows, linux/arm, BSD, …) build from source
+with Go 1.25+:
+
 ```sh
 go install github.com/cmj0121/pylon/src/go/cmd/pylon@latest
 ```
