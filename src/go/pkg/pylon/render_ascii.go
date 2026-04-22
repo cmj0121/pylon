@@ -91,13 +91,14 @@ func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int, data interface{
 		sizedContentW = &cw
 	}
 
-	// Chart dispatch: when the box carries a renderer, ask the chart
-	// path for rows that replace per-item rendering. nil signals the
-	// "| text over raw text" no-op case, where the normal Items path
-	// should run.
+	// Chart dispatch: any box that carries a renderer OR a bare @ref
+	// goes through applyChartRenderer so the shared rendererInlineError
+	// helper can emit the ⚠ row for malformed inputs (including the
+	// bare-@ref case where Renderer is empty). nil signals the
+	// "| text over raw text" no-op, where the normal Items path runs.
 	var itemRows []string
-	if ast.Renderer != "" {
-		itemRows = applyChartRenderer(ast, data, bc, sizedContentW)
+	if ast.Renderer != "" || firstDataRef(ast) != nil {
+		itemRows = applyChartRenderer(ast, data, bc)
 	}
 	if itemRows == nil {
 		itemRows = []string{}

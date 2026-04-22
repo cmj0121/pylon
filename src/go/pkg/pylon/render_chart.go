@@ -24,21 +24,23 @@ const (
 )
 
 // applyChartRenderer replaces a chart box's rendered itemRows when
-// Box.Renderer is non-empty. Returns the rows that substitute for
-// what renderBoxRows would otherwise produce by walking b.Items.
+// the box declares a renderer or carries a bare @ref. Returns the
+// rows that substitute for what renderBoxRows would otherwise
+// produce by walking b.Items.
 //
 // Flow:
 //  1. Ask rendererInlineError for the single error that applies to
-//     this box. If ok=true, the box body is the warning string; the
-//     caller wraps it in the normal border / pad machinery.
+//     this box (covers bare @ref, unknown renderer, bad series, ...).
+//     If ok=true, the box body is the warning string; the caller
+//     wraps it in the normal border / pad machinery.
 //  2. Otherwise dispatch on b.Renderer. `text` falls back to nil
 //     when there's no @ref child — "| text" over raw text is a
 //     no-op and the normal Items path should run.
 //
-// sizedContentW is non-nil when the outer box is under a size:
-// constraint; hbar uses it to tighten the bar budget so the row
-// fits the declared width.
-func applyChartRenderer(b *Box, data interface{}, bc boxChars, sizedContentW *int) []string {
+// Bar width is fixed at barWidthDefault; size: constraints at the
+// outer box shrink the clipRow budget rather than the chart's own
+// layout, matching JS behaviour.
+func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 	// rendererInlineError reads only meta.Data; a minimal Meta is
 	// enough to exercise the shared helper without dragging the
 	// whole frontmatter struct through the render path.
@@ -50,8 +52,7 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars, sizedContentW *in
 	case "text":
 		return renderTextChart(b, data)
 	case "hbar", "bar":
-		series := chartSeries(b, data)
-		return renderHBar(b.Renderer, series, bc, hbarBudget(sizedContentW, series))
+		return renderHBar(b.Renderer, chartSeries(b, data), bc, barWidthDefault)
 	case "vbar":
 		return renderVBar(chartSeries(b, data), bc)
 	}
@@ -216,40 +217,6 @@ func renderVBar(series []map[string]interface{}, bc boxChars) []string {
 	}
 	rows = append(rows, labelRow.String(), valueRow.String())
 	return rows
-}
-
-// hbarBudget picks the bar-cell budget for horizontal charts. When
-// no outer size constraint is in force, the default 10 applies.
-// Under a tight size:, the remaining content width after label +
-// divider + value overhead becomes the budget, clamped to
-// [1, barWidthDefault] so oversized containers don't balloon the
-// bars beyond the JS default.
-func hbarBudget(sizedContentW *int, series []map[string]interface{}) int {
-	if sizedContentW == nil {
-		return barWidthDefault
-	}
-
-	labelW, valueW := 0, 0
-	for _, e := range series {
-		if w := displayWidth(fmt.Sprintf("%v", e["x"])); w > labelW {
-			labelW = w
-		}
-		y, _ := e["y"].(float64)
-		if w := displayWidth("(" + formatY(y) + ")"); w > valueW {
-			valueW = w
-		}
-	}
-
-	// Row width = labelW + valueW + 6 + budget (see renderHBar).
-	// Budget must fit inside sizedContentW.
-	budget := *sizedContentW - labelW - valueW - 6
-	if budget < 1 {
-		budget = 1
-	}
-	if budget > barWidthDefault {
-		budget = barWidthDefault
-	}
-	return budget
 }
 
 // formatY renders a bar value. Integers come through without a
