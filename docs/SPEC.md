@@ -443,9 +443,6 @@ Flag details: `pylon --help`.
 
 ### Known limitations
 
-- Chart renderers (`| bar`, `| hbar`, `| vbar`, `| text`) are parsed
-  but not yet rendered by the Go CLI. Use the JS library for chart
-  output until the follow-up lands.
 - PNG output embeds JetBrains Mono; glyphs outside its coverage
   (CJK, emoji) fall back to tofu or the replacement glyph.
 - SVG emits one `<tspan>` per character cell. Intentional — it keeps

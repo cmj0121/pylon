@@ -10,6 +10,8 @@ shipped.
 `Status` values:
 
 - **closing** — work in flight on a named branch.
+- **closed** — shipped; kept in the list as a historical marker so
+  future reviewers can trace when each gap was resolved.
 - **deferred** — known, scoped, and intentionally out of the current
   cut.
 - **documented** — limitation is acknowledged in SPEC; any change is
@@ -17,13 +19,13 @@ shipped.
 
 ## Functional parity
 
-1. **Go CLI chart rendering.** `| bar`, `| hbar`, `| vbar`, and
-   `| text` are parsed by the Go AST but unrendered, so the "same
-   source renders identically in the browser, on the command line,
-   and inside your editor" promise only holds for flow diagrams.
-   Status: **closing** in `feat/go-chart-renderers`.
-   Ref: [`SPEC.md` §Known limitations](SPEC.md#known-limitations),
-   [`../src/go/README.md` §Known limitations](../src/go/README.md#known-limitations).
+1. **Go CLI chart rendering — CLOSED.** `| bar`, `| hbar`, `| vbar`,
+   and `| text` render in the Go CLI as of `feat/go-chart-renderers`,
+   with 13 chart fixtures locked byte-for-byte against the JS
+   reference in the parity gate. The "same source renders identically"
+   promise now holds for flow diagrams and charts alike.
+   Status: **closed**.
+   Ref: [`../src/go/pkg/pylon/render_chart.go`](../src/go/pkg/pylon/render_chart.go).
 
 2. **LSP semantic tokens — partial.** Only `[`, `]`, `(`, `)`,
    `&ref`, and `@ref` are emitted today. Edges, frontmatter
