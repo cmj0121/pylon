@@ -52,9 +52,9 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 	case "text":
 		return renderTextChart(b, data)
 	case "hbar", "bar":
-		return renderHBar(b.Renderer, chartSeries(b, data), bc, barWidthDefault)
+		return renderHBar(chartSeries(b, data), bc, barWidthDefault)
 	case "vbar":
-		return renderVBar(chartSeries(b, data), bc)
+		return renderVBar(chartSeries(b, data))
 	}
 	return nil
 }
@@ -103,16 +103,12 @@ func renderTextChart(b *Box, data interface{}) []string {
 	return []string{string(raw)}
 }
 
-// renderHBar lays out a horizontal bar chart. displayName is the
-// user-typed renderer (`hbar` or `bar`) — only used by the shared
-// error helper, and not needed here because rendererInlineError ran
-// before dispatch.
-//
-// Row shape (SPEC §hbar / bar): "{label} {│} {body}{value} {│}"
-// where body is (bars + spaces) clipped to budget+1 display cells
-// so the trailing space between the bar and the value label stays
+// renderHBar lays out a horizontal bar chart. Row shape (SPEC
+// §hbar / bar): "{label} {│} {body}{value} {│}" where body is
+// (bars + spaces) clipped to budget+1 display cells so the
+// trailing space between the bar and the value label stays
 // constant when y is small.
-func renderHBar(_ string, series []map[string]interface{}, bc boxChars, budgetW int) []string {
+func renderHBar(series []map[string]interface{}, bc boxChars, budgetW int) []string {
 	budget := budgetW
 	if budget < 1 {
 		budget = 1
@@ -151,8 +147,8 @@ func renderHBar(_ string, series []map[string]interface{}, bc boxChars, budgetW 
 		}
 		body := strings.Repeat(barGlyph, cells) + strings.Repeat(" ", budget)
 		body = clipRow(body, budget+1)
-		out[i] = padStart(labels[i], labelW) + " " + bc.v + " " +
-			body + padStart(values[i], valueW) + " " + bc.v
+		out[i] = padRow(labels[i], labelW, AlignRight, 0) + " " + bc.v + " " +
+			body + padRow(values[i], valueW, AlignRight, 0) + " " + bc.v
 	}
 	return out
 }
@@ -161,10 +157,11 @@ func renderHBar(_ string, series []map[string]interface{}, bc boxChars, budgetW 
 // rows of bars + 2 footer rows (labels, values). Each column is
 // max(|label|, |value|, vbarColumnMinWidth) wide, left-biased
 // centered. Height is not tightened by outer size today.
-func renderVBar(series []map[string]interface{}, bc boxChars) []string {
-	_ = bc // box chars are not needed for the body; vbar uses plain
-	// block + space glyphs internally.
-
+//
+// Box chars aren't threaded in — vbar's grid is pure block + space
+// glyphs, with the outer theme's border painted around it by
+// renderBoxRows.
+func renderVBar(series []map[string]interface{}) []string {
 	n := len(series)
 	labels := make([]string, n)
 	values := make([]string, n)
@@ -206,14 +203,14 @@ func renderVBar(series []map[string]interface{}, bc boxChars) []string {
 			if barH[i] >= barHeightDefault-r {
 				content = barGlyph
 			}
-			sb.WriteString(centerInWidth(content, colW[i]))
+			sb.WriteString(padRow(content, colW[i], AlignCenter, 1))
 		}
 		rows = append(rows, sb.String())
 	}
 	var labelRow, valueRow strings.Builder
 	for i := range series {
-		labelRow.WriteString(centerInWidth(labels[i], colW[i]))
-		valueRow.WriteString(centerInWidth(values[i], colW[i]))
+		labelRow.WriteString(padRow(labels[i], colW[i], AlignCenter, 1))
+		valueRow.WriteString(padRow(values[i], colW[i], AlignCenter, 1))
 	}
 	rows = append(rows, labelRow.String(), valueRow.String())
 	return rows
@@ -228,29 +225,4 @@ func formatY(y float64) string {
 		return fmt.Sprintf("%d", int64(y))
 	}
 	return fmt.Sprintf("%g", y)
-}
-
-// padStart left-pads s with spaces so its display width is at least
-// w. Matches JS's String.prototype.padStart. No truncation when s
-// is already wider than w — consistent with the JS reference.
-func padStart(s string, w int) string {
-	slack := w - displayWidth(s)
-	if slack <= 0 {
-		return s
-	}
-	return strings.Repeat(" ", slack) + s
-}
-
-// centerInWidth centers content in a column of display width w,
-// biasing extra space to the right so a lone glyph lands in the
-// left-of-center cell. Matches JS: leftPad = floor((w - cW)/2),
-// rightPad = w - cW - leftPad.
-func centerInWidth(content string, w int) string {
-	cw := displayWidth(content)
-	if cw >= w {
-		return content
-	}
-	left := (w - cw) / 2
-	right := w - cw - left
-	return strings.Repeat(" ", left) + content + strings.Repeat(" ", right)
 }
