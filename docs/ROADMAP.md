@@ -52,10 +52,12 @@ shipped.
    `feat/pylon-lsp-ux`.
    Ref: [`LSP.md` §Editor setup](LSP.md#editor-setup).
 
-6. **No `--strict` CLI flag.** The `pylon` CLI prints diagnostics
-   to stderr but always exits `0`; CI users cannot gate a build on
-   Pylon diagnostics without parsing stderr. Status: deferred.
-   Ref: [`LSP.md` §CLI diagnostic mode](LSP.md#cli-diagnostic-mode).
+6. **`--strict` CLI flag — CLOSED.** `pylon --strict` exits `2`
+   when `Validate` produced any diagnostics; default remains `0`
+   so existing scripts are unaffected. Closes the CI-gating gap.
+   Status: **closed**.
+   Ref: [`../src/go/cmd/pylon/main.go`](../src/go/cmd/pylon/main.go),
+   [`LSP.md` §CLI diagnostic mode](LSP.md#cli-diagnostic-mode).
 
 ## Release engineering
 
@@ -65,9 +67,15 @@ shipped.
    upload; every user needs Go 1.25+ to install the CLI. Status:
    deferred.
 
-2. **No `--version` flag.** Neither `pylon` nor `pylon-lsp` reports
-   a build-time version. Bug reports cannot pin a build. Status:
-   deferred.
+2. **`--version` flag — CLOSED.** Both `pylon` and `pylon-lsp`
+   print a build-time version string (populated by the Makefile
+   via `git describe --tags --always --dirty`). `go install` users
+   without the Makefile get the literal `dev` fallback — a proper
+   release workflow (gap #1 in this section) will ship pre-built
+   binaries with real version strings baked in. Status: **closed**.
+   Ref: [`../src/go/cmd/pylon/main.go`](../src/go/cmd/pylon/main.go),
+   [`../src/go/cmd/pylon-lsp/main.go`](../src/go/cmd/pylon-lsp/main.go),
+   [`../src/go/Makefile`](../src/go/Makefile).
 
 3. **No npm / JS package.** `src/js/` has no `package.json`; web
    consumers copy `dist/pylon.min.js` and `dist/pylon.css` by hand.
