@@ -16,12 +16,21 @@ import (
 	"github.com/cmj0121/pylon/src/go/pkg/pylon"
 )
 
+// Version is the build-time version string. The Makefile injects the
+// output of `git describe --tags --always --dirty` via
+// `-ldflags="-X main.Version=..."`; go-install users without the
+// Makefile (and the release pipeline is not yet in place) get the
+// literal default "dev".
+var Version = "dev"
+
 // CLI is the kong-tagged struct describing the command-line surface.
 type CLI struct {
-	Format  string `kong:"short='f',enum='ascii,svg,png',default='ascii',help='output format'"`
-	Output  string `kong:"short='o',default='-',help='output file; - is stdout'"`
-	Input   string `kong:"arg,optional,type='existingfile',help='input file; stdin when omitted'"`
-	Verbose int    `kong:"short='v',type='counter',help='verbose; repeat for debug (-vv)'"`
+	Format  string           `kong:"short='f',enum='ascii,svg,png',default='ascii',help='output format'"`
+	Output  string           `kong:"short='o',default='-',help='output file; - is stdout'"`
+	Input   string           `kong:"arg,optional,type='existingfile',help='input file; stdin when omitted'"`
+	Verbose int              `kong:"short='v',type='counter',help='verbose; repeat for debug (-vv)'"`
+	Strict  bool             `kong:"help='exit non-zero when any diagnostic is emitted (for CI gating)'"`
+	Version kong.VersionFlag `kong:"help='show version and exit'"`
 }
 
 func main() {
@@ -30,6 +39,7 @@ func main() {
 		kong.Name("pylon"),
 		kong.Description("Render Pylon source into ASCII/SVG/PNG."),
 		kong.UsageOnError(),
+		kong.Vars{"version": "pylon version " + Version},
 	)
 
 	setupLogging(cli.Verbose)
@@ -41,7 +51,8 @@ func main() {
 	}
 
 	ast := pylon.Parse(src)
-	for _, d := range pylon.Validate(ast) {
+	diags := pylon.Validate(ast)
+	for _, d := range diags {
 		emitDiagnostic(os.Stderr, displayPath(cli.Input), d)
 	}
 
@@ -71,6 +82,13 @@ func main() {
 	default:
 		// kong's enum tag already guards this, but keep the catchall.
 		fmt.Fprintf(os.Stderr, "pylon: unknown format %q\n", cli.Format)
+		os.Exit(2)
+	}
+
+	// Strict-mode gating: rendering already completed so users see
+	// their output; we just translate "any diagnostic" into a non-zero
+	// exit for CI pipelines.
+	if cli.Strict && len(diags) > 0 {
 		os.Exit(2)
 	}
 }

@@ -19,11 +19,15 @@ the install with:
 
 ```sh
 pylon-lsp < /dev/null
+pylon-lsp --version
 ```
 
 A correctly-installed server exits with status 0 and writes zero
 bytes to stdout or stderr when stdin is closed — stdout is reserved
-for the LSP protocol.
+for the LSP protocol. `--version` (or `-V`) prints
+`pylon-lsp version <X>` and exits 0; the Makefile populates `<X>`
+via `git describe --tags --always --dirty`, and `go install` users
+without the Makefile get the literal `dev` fallback.
 
 ## Editor setup
 
@@ -152,13 +156,19 @@ pass as the server, printing diagnostics to stderr after parsing:
 
 `PATH` is the positional input path, or `-` for stdin. `LINE` and
 `COL` are 1-based (editor / compiler convention; the LSP wire stays
-0-based). Rendering proceeds regardless of severity and the exit
-code stays `0` — a `--strict` flag that fails the run on any
-diagnostic is deferred.
+0-based). Rendering proceeds regardless of severity so users see
+their output alongside any errors. The default exit code is `0`;
+pass `--strict` to exit `2` when any diagnostic is emitted, which
+lets CI pipelines gate a build on Pylon lint errors without parsing
+stderr.
 
 ```sh
 $ echo '[ foo | unknown ]' | pylon >/dev/null
 [renderer.unknown] -:1:1: ⚠ unknown renderer: unknown
+
+$ echo '[ foo | unknown ]' | pylon --strict >/dev/null; echo "exit=$?"
+[renderer.unknown] -:1:1: ⚠ unknown renderer: unknown
+exit=2
 ```
 
 ## Install-path change
