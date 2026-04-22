@@ -32,8 +32,10 @@ func TestHandlersEmpty(t *testing.T) {
 }
 
 func TestHandlersPopulatedCleanDoc(t *testing.T) {
-	// Clean source produces no diagnostics. U6 / U7 stubs still
-	// return empty; tighten those when the feature bodies land.
+	// Clean source produces no diagnostics and no document symbols.
+	// Semantic tokens DO emit for "[ hello ]" — two bracket tokens
+	// (opener + closer). U7 partial scope: brackets + refs / datarefs
+	// only; everything else defers to feat/pylon-lsp-ux.
 	store := NewStore()
 	const uri = "file:///tmp/c.pylon"
 	store.Open(uri, 1, "[ hello ]")
@@ -45,8 +47,11 @@ func TestHandlersPopulatedCleanDoc(t *testing.T) {
 	if got := h.DocumentSymbols(uri); len(got) != 0 {
 		t.Errorf("DocumentSymbols(open)=%v, want empty stub", got)
 	}
-	if got := h.SemanticTokens(uri); got == nil || len(got.Data) != 0 {
-		t.Errorf("SemanticTokens(open)=%v, want empty-Data stub", got)
+	if got := h.SemanticTokens(uri); got == nil {
+		t.Errorf("SemanticTokens(open)=nil, want non-nil")
+	} else if len(got.Data) != 10 {
+		// 2 tokens × 5 uint32 each — the `[` and `]` operator tokens.
+		t.Errorf("SemanticTokens(open).Data len=%d, want 10", len(got.Data))
 	}
 }
 

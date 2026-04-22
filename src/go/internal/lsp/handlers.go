@@ -157,11 +157,18 @@ func sortSymbolsByStart(syms []protocol.DocumentSymbol) {
 	})
 }
 
-// SemanticTokens returns the tokens for uri. U4 stub returns an empty
-// SemanticTokens (Data: []uint32{}); U7 swaps in a real encoder.
+// SemanticTokens returns the LSP-wire-encoded token stream for uri.
+// Partial implementation: brackets plus &/@ references only; see
+// internal/lsp/tokens.go for the legend and deferred-class list.
+// Keeps the U5/U6 "non-nil empty for known clean doc, nil-ish for
+// unknown URI" convention — but LSP clients expect a value, so
+// unknown URIs still get an empty Data slice instead of nil.
 func (h *Handlers) SemanticTokens(uri string) *protocol.SemanticTokens {
-	if _, ok := h.Store.Get(uri); !ok {
+	doc, ok := h.Store.Get(uri)
+	if !ok {
 		return &protocol.SemanticTokens{Data: []uint32{}}
 	}
-	return &protocol.SemanticTokens{Data: []uint32{}}
+	raw := collectSemanticTokens(doc.AST)
+	raw = sortAndValidateTokens(raw)
+	return &protocol.SemanticTokens{Data: encodeTokens(raw)}
 }

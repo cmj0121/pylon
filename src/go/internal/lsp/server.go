@@ -75,7 +75,8 @@ func buildProtocolHandler(store *Store, handlers *Handlers) protocol.Handler {
 		TextDocumentDidChange: onDidChange(store, handlers),
 		TextDocumentDidClose:  onDidClose(store, handlers),
 
-		TextDocumentDocumentSymbol: onDocumentSymbol(handlers),
+		TextDocumentDocumentSymbol:     onDocumentSymbol(handlers),
+		TextDocumentSemanticTokensFull: onSemanticTokensFull(handlers),
 	}
 }
 
@@ -86,6 +87,13 @@ func onInitialize(ctx *glsp.Context, params *protocol.InitializeParams) (any, er
 	caps := protocol.ServerCapabilities{
 		TextDocumentSync:       protocol.TextDocumentSyncKindFull,
 		DocumentSymbolProvider: true,
+		SemanticTokensProvider: &protocol.SemanticTokensOptions{
+			Legend: protocol.SemanticTokensLegend{
+				TokenTypes:     tokenTypes,
+				TokenModifiers: tokenModifiers,
+			},
+			Full: true,
+		},
 	}
 	version := lsVersion
 	return protocol.InitializeResult{
@@ -170,6 +178,15 @@ func onDidClose(store *Store, h *Handlers) protocol.TextDocumentDidCloseFunc {
 			},
 		)
 		return nil
+	}
+}
+
+// onSemanticTokensFull answers textDocument/semanticTokens/full
+// requests with the delta-encoded uint32 stream. See tokens.go for
+// the legend and encoding.
+func onSemanticTokensFull(h *Handlers) protocol.TextDocumentSemanticTokensFullFunc {
+	return func(ctx *glsp.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
+		return h.SemanticTokens(string(params.TextDocument.URI)), nil
 	}
 }
 
