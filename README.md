@@ -117,6 +117,8 @@ catalogue, and error model.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.
 - [`docs/LSP.md`](docs/LSP.md) — Language Server reference (install,
   editor setup, diagnostics catalogue).
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — deferred gaps on the way to
+  v1.0.
 - Live demo: <https://cmj0121.github.io/pylon/>.
 
 ## DDD (Dream-Driven Development)
