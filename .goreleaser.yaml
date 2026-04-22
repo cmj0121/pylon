@@ -1,0 +1,58 @@
+# goreleaser config for pylon — https://goreleaser.com
+#
+# Triggered from .github/workflows/release.yml on v* tag pushes. Four
+# platform targets (linux + darwin × amd64 + arm64); pure-Go static
+# builds, tar.gz archives, SHA256 checksums. Tags with a prerelease
+# suffix (-rc.N, -beta.N, -alpha.N) land as GitHub pre-releases;
+# plain vX.Y.Z tags become full releases.
+#
+# pylon-dump-diagnostics is intentionally omitted — it's a dev tool
+# used only by the parity-diagnostics CI gate.
+
+version: 2
+
+# No before.hooks — pylon's go.mod lives under src/go (module
+# subdir), so a repo-root `go mod tidy` has nothing to tidy and fails
+# the Go module resolver. Each build stanza sets `dir: src/go` so the
+# actual builds resolve the module correctly.
+
+builds:
+  - id: pylon
+    main: ./cmd/pylon
+    dir: src/go
+    binary: pylon
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.Version={{ .Version }}
+
+  - id: pylon-lsp
+    main: ./cmd/pylon-lsp
+    dir: src/go
+    binary: pylon-lsp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.Version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      pylon_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  prerelease: auto
