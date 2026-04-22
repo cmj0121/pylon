@@ -3,6 +3,14 @@ GO      ?= go
 GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w
 
+# VERSION is embedded into the pylon / pylon-lsp binaries via
+# -ldflags="-X main.Version=...". `git describe` yields
+# v<tag>-<commits>-g<sha>[-dirty]; unreleased worktrees without any
+# tag fall back to the short SHA, and environments without git at all
+# get the literal "dev" marker.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION_LDFLAGS := -X main.Version=$(VERSION)
+
 PYLON          := $(DIST)/pylon
 PYLON_LSP      := $(DIST)/pylon-lsp
 PYLON_DUMP_DIAG := $(DIST)/pylon-dump-diagnostics
@@ -30,11 +38,11 @@ build: $(PYLON) $(PYLON_LSP) $(PYLON_DUMP_DIAG)	# build all three binaries to $(
 
 $(PYLON):
 	@mkdir -p $(DIST)
-	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(PYLON) ./cmd/pylon
+	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS) $(VERSION_LDFLAGS)" -o $(PYLON) ./cmd/pylon
 
 $(PYLON_LSP):
 	@mkdir -p $(DIST)
-	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(PYLON_LSP) ./cmd/pylon-lsp
+	@$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS) $(VERSION_LDFLAGS)" -o $(PYLON_LSP) ./cmd/pylon-lsp
 
 $(PYLON_DUMP_DIAG):
 	@mkdir -p $(DIST)
