@@ -74,15 +74,18 @@ func buildProtocolHandler(store *Store, handlers *Handlers) protocol.Handler {
 		TextDocumentDidOpen:   onDidOpen(store, handlers),
 		TextDocumentDidChange: onDidChange(store, handlers),
 		TextDocumentDidClose:  onDidClose(store, handlers),
+
+		TextDocumentDocumentSymbol: onDocumentSymbol(handlers),
 	}
 }
 
 func onInitialize(ctx *glsp.Context, params *protocol.InitializeParams) (any, error) {
-	// Build capabilities from which protocol.Handler slots are set.
-	// Non-nil slots flip their capability on; nil stays off. Full-text
-	// sync is selected by pinning the sync kind explicitly.
+	// Full-text sync plus the features U5+ flipped on: document
+	// symbols. diagnosticProvider stays nil -- we push diagnostics
+	// via the publish notification, not pull (3.17-era) queries.
 	caps := protocol.ServerCapabilities{
-		TextDocumentSync: protocol.TextDocumentSyncKindFull,
+		TextDocumentSync:       protocol.TextDocumentSyncKindFull,
+		DocumentSymbolProvider: true,
 	}
 	version := lsVersion
 	return protocol.InitializeResult{
@@ -167,6 +170,21 @@ func onDidClose(store *Store, h *Handlers) protocol.TextDocumentDidCloseFunc {
 			},
 		)
 		return nil
+	}
+}
+
+// onDocumentSymbol answers textDocument/documentSymbol requests with
+// the hierarchical DocumentSymbol form. glsp's callback returns any
+// so clients that prefer SymbolInformation[] could be accommodated
+// later; we always serve the richer DocumentSymbol tree.
+func onDocumentSymbol(h *Handlers) protocol.TextDocumentDocumentSymbolFunc {
+	return func(ctx *glsp.Context, params *protocol.DocumentSymbolParams) (any, error) {
+		uri := string(params.TextDocument.URI)
+		syms := h.DocumentSymbols(uri)
+		if syms == nil {
+			return nil, nil
+		}
+		return syms, nil
 	}
 }
 

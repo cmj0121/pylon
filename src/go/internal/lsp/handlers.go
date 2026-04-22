@@ -1,7 +1,11 @@
 package lsp
 
 import (
+	"sort"
+
 	protocol "github.com/tliron/glsp/protocol_3_16"
+
+	"github.com/cmj0121/pylon/src/go/pkg/pylon"
 )
 
 // Handlers is the transport-free surface every LSP feature attaches to.
@@ -40,13 +44,117 @@ func (h *Handlers) Diagnostics(uri string) []protocol.Diagnostic {
 	return out
 }
 
-// DocumentSymbols returns the symbols for uri. U4 stub returns nil;
-// U6 fills this with named-node and data-series collection.
+// DocumentSymbols returns the outline for uri: every `:: name`
+// declaration as a Variable symbol, plus each frontmatter `data:`
+// series as a Constant named `@key`. Returns nil for unknown URIs;
+// returns an empty slice (not nil) when the document is known but
+// carries no symbols, so callers can distinguish "clean outline"
+// from "unknown document".
+//
+// Per-series-key spans are not tracked by the frontmatter parser
+// today (Meta.DataSpan covers the whole `data:` section), so every
+// series symbol shares that range. Narrowing is a future refinement
+// that can ride on a later parser change.
 func (h *Handlers) DocumentSymbols(uri string) []protocol.DocumentSymbol {
-	if _, ok := h.Store.Get(uri); !ok {
+	doc, ok := h.Store.Get(uri)
+	if !ok {
 		return nil
 	}
+	out := []protocol.DocumentSymbol{}
+	out = append(out, namedNodeSymbols(doc.AST)...)
+	out = append(out, dataSeriesSymbols(doc.AST)...)
+	sortSymbolsByStart(out)
+	return out
+}
+
+// namedNodeSymbols walks the AST collecting one symbol per `:: name`
+// declaration. Named Boxes can be nested and can appear inside edge
+// labels; the traversal visits every reachable Box.
+func namedNodeSymbols(root pylon.AST) []protocol.DocumentSymbol {
+	if root == nil {
+		return nil
+	}
+	var out []protocol.DocumentSymbol
+	var visit func(n pylon.Node)
+	visit = func(n pylon.Node) {
+		if n == nil {
+			return
+		}
+		switch x := n.(type) {
+		case *pylon.Box:
+			if x.Name != "" {
+				r := spanToRange(x.Span)
+				out = append(out, protocol.DocumentSymbol{
+					Name:           x.Name,
+					Kind:           protocol.SymbolKindVariable,
+					Range:          r,
+					SelectionRange: r,
+				})
+			}
+			for _, c := range x.Items {
+				visit(c)
+			}
+		case *pylon.Row:
+			for _, c := range x.Items {
+				visit(c)
+			}
+		case *pylon.Edge:
+			if x.Label != nil {
+				visit(x.Label)
+			}
+		}
+	}
+	visit(root)
+	return out
+}
+
+// dataSeriesSymbols emits one symbol per resolvable `@series`
+// reference in the frontmatter `data:` block. A flat list surfaces as
+// a single `@data`; a map-keyed data block exposes each key as
+// `@<key>`. Each symbol takes the whole DataSpan as its range for v1
+// — per-key spans are a future refinement.
+func dataSeriesSymbols(root pylon.AST) []protocol.DocumentSymbol {
+	if root == nil {
+		return nil
+	}
+	if root.Meta.Data == nil {
+		return nil
+	}
+	r := spanToRange(root.Meta.DataSpan)
+	mk := func(name string) protocol.DocumentSymbol {
+		return protocol.DocumentSymbol{
+			Name:           name,
+			Kind:           protocol.SymbolKindConstant,
+			Range:          r,
+			SelectionRange: r,
+		}
+	}
+	switch d := root.Meta.Data.(type) {
+	case []map[string]interface{}:
+		return []protocol.DocumentSymbol{mk("@data")}
+	case map[string]interface{}:
+		out := make([]protocol.DocumentSymbol, 0, len(d))
+		for k := range d {
+			out = append(out, mk("@"+k))
+		}
+		return out
+	}
 	return nil
+}
+
+// sortSymbolsByStart stabilises the symbol slice by Range.Start so
+// tests and editors see deterministic ordering.
+func sortSymbolsByStart(syms []protocol.DocumentSymbol) {
+	sort.SliceStable(syms, func(i, j int) bool {
+		a, b := syms[i].Range.Start, syms[j].Range.Start
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		if a.Character != b.Character {
+			return a.Character < b.Character
+		}
+		return syms[i].Name < syms[j].Name
+	})
 }
 
 // SemanticTokens returns the tokens for uri. U4 stub returns an empty
