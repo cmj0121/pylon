@@ -70,7 +70,7 @@ Live demo: <https://cmj0121.github.io/pylon/>.
 ### Command line
 
 ```sh
-go install github.com/cmj0121/pylon/src/go@latest
+go install github.com/cmj0121/pylon/src/go/cmd/pylon@latest
 ```
 
 ```sh
@@ -115,6 +115,8 @@ catalogue, and error model.
 - [`examples/`](examples/) — ten standalone sample files, one per
   feature.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.
+- [`docs/LSP.md`](docs/LSP.md) — Language Server reference (install,
+  editor setup, diagnostics catalogue).
 - Live demo: <https://cmj0121.github.io/pylon/>.
 
 ## DDD (Dream-Driven Development)

@@ -37,3 +37,5 @@ jobs:
         run: make -C src/js build
       - name: Cross-implementation parity gate
         run: make -C src/go parity
+      - name: Cross-implementation diagnostic-set parity gate
+        run: make -C src/go parity-diagnostics

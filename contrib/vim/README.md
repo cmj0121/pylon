@@ -68,6 +68,60 @@ override it for Vim 8+'s `~/.vim/pack/...` layout, the XDG data-home
 `~/.local/share/nvim/site/pack/...` location, or any other runtimepath
 root.
 
+## Language Server (optional)
+
+The Pylon toolchain ships a Language Server binary that provides
+live diagnostics, a document-symbol outline, and partial semantic
+highlighting on top of this plugin. The regex-based syntax file
+below remains the fallback when the LSP isn't running or the binary
+isn't on `$PATH` — no switch to flip.
+
+Install the binary (needs Go 1.25+):
+
+```sh
+go install github.com/cmj0121/pylon/src/go/cmd/pylon-lsp@latest
+```
+
+The command resolves to `$GOPATH/bin/pylon-lsp` (typically
+`~/go/bin/pylon-lsp`). Make sure that directory is on your `$PATH`.
+
+Then add one of the following to your Neovim config. With
+nvim-lspconfig:
+
+```lua
+require('pylon.lsp').setup()
+```
+
+Without nvim-lspconfig, drive `vim.lsp.start` directly:
+
+```lua
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'pylon',
+  callback = function()
+    vim.lsp.start(require('pylon.lsp').start_opts())
+  end,
+})
+```
+
+Both paths `require` the bundled Lua module at
+[`lua/pylon/lsp.lua`](lua/pylon/lsp.lua) — the same `rtp` setup that
+loads `syntax/pylon.vim` also makes `require('pylon.lsp')` resolve.
+
+What the server provides today:
+
+- **Diagnostics** for every SPEC error class — unresolved `&ref`,
+  duplicate `::` declarations, unknown renderers, bar-chart data
+  errors, frontmatter shape rejections, and the rest.
+- **Document symbols** — outline entries for each `:: name`
+  declaration and each frontmatter `data:` series.
+- **Partial semantic tokens** — brackets, `&ref`, `@ref`. Edges,
+  `:: name`, `| renderer` pipes, and frontmatter keys still fall
+  back to the regex syntax plugin shipped here; a follow-up branch
+  (`feat/pylon-lsp-ux`) ports them to the server.
+
+The Lua module is loader-safe when nvim-lspconfig is absent: `setup()`
+emits a warning and returns without error.
+
 ## What gets highlighted
 
 | Group               | Matches                                                     |
