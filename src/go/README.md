@@ -67,11 +67,24 @@ The parity gate requires both binaries built: `make -C src/go build` and
 Keep fixtures small and single-purpose — one feature per file, mirroring the convention
 under [`../../examples/`](../../examples/).
 
+### Regenerating goldens
+
+The `.ascii` files under `pkg/pylon/testdata/` are authored to match the JS reference
+renderer, so the canonical regen command routes through the Node shim rather than the Go
+binary:
+
+```sh
+node ../../scripts/pylon-render-js.mjs pkg/pylon/testdata/NAME.pylon > pkg/pylon/testdata/NAME.ascii
+```
+
+The repo-root [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml) excludes
+`pkg/pylon/testdata/*.ascii` from the end-of-file-fixer and trailing-whitespace hooks, so
+the golden keeps the exact bytes the renderer emits: no trailing newline, and trailing
+spaces on padded chart rows are preserved. Don't hand-edit these files — if a golden looks
+wrong, regenerate it and let `make -C src/go parity` confirm Go still agrees with JS.
+
 ## Known limitations
 
-- **Chart renderers unimplemented.** `| bar`, `| hbar`, `| vbar`, and `| text` are parsed
-  by the Go AST but not rendered yet; use the [JS library](../js/) for chart output until
-  the follow-up lands.
 - **CJK text shaping in PNG.** The embedded font is JetBrains Mono Regular; glyphs outside
   its coverage (CJK, emoji) fall back to tofu or the replacement glyph.
 - **Per-cell SVG tspan.** SVG output emits one `<tspan>` per character cell for monospace

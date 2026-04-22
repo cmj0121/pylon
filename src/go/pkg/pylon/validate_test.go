@@ -276,3 +276,194 @@ func TestValidateNilAST(t *testing.T) {
 		t.Errorf("Validate(nil) = %v, want nil", got)
 	}
 }
+
+// TestRendererInlineErrorCatalogue locks every renderer-level wire
+// message byte-for-byte. The validator and the chart renderer both
+// flow through rendererInlineError, so if one of these strings
+// changes without this test being updated, the two surfaces would
+// drift. Keep this test expensive to break.
+func TestRendererInlineErrorCatalogue(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		dataHack interface{} // optional override for ast.Meta.Data
+		wantCode Code
+		wantMsg  string
+	}{
+		{
+			name:     "bare-ref",
+			src:      "---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data ]",
+			wantCode: CodeBareDataRef,
+			wantMsg:  "⚠ @data: requires | renderer",
+		},
+		{
+			name:     "unknown-renderer",
+			src:      "[ hello | foo ]",
+			wantCode: CodeUnknownRenderer,
+			wantMsg:  "⚠ unknown renderer: foo",
+		},
+		{
+			name:     "use-at-ref-bar-alias",
+			src:      "[ hello | bar ]",
+			wantCode: CodeUseAtRef,
+			wantMsg:  "⚠ bar: use @ref",
+		},
+		{
+			name:     "use-at-ref-hbar",
+			src:      "[ hello | hbar ]",
+			wantCode: CodeUseAtRef,
+			wantMsg:  "⚠ hbar: use @ref",
+		},
+		{
+			name:     "use-at-ref-vbar",
+			src:      "[ hello | vbar ]",
+			wantCode: CodeUseAtRef,
+			wantMsg:  "⚠ vbar: use @ref",
+		},
+		{
+			name:     "data-not-found",
+			src:      "[ @missing | bar ]",
+			wantCode: CodeDataNotFound,
+			wantMsg:  "⚠ @missing not found",
+		},
+		{
+			name:     "bar-shape-bar-alias",
+			src:      "[ @s | bar ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ bar: expected [{x,y}]",
+		},
+		{
+			name:     "bar-shape-hbar",
+			src:      "[ @s | hbar ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ hbar: expected [{x,y}]",
+		},
+		{
+			name:     "bar-shape-vbar",
+			src:      "[ @s | vbar ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ vbar: expected [{x,y}]",
+		},
+		{
+			name:     "bar-empty-bar-alias",
+			src:      "[ @s | bar ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ bar: empty series",
+		},
+		{
+			name:     "bar-empty-hbar",
+			src:      "[ @s | hbar ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ hbar: empty series",
+		},
+		{
+			name:     "bar-empty-vbar",
+			src:      "[ @s | vbar ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ vbar: empty series",
+		},
+		{
+			name:     "bar-negative-y-bar-alias",
+			src:      "---\ndata:\n  - x: 1\n    y: -5\n---\n[ @data | bar ]",
+			wantCode: CodeBarNegativeY,
+			wantMsg:  "⚠ bar: negative y",
+		},
+		{
+			name:     "bar-negative-y-hbar",
+			src:      "---\ndata:\n  - x: 1\n    y: -5\n---\n[ @data | hbar ]",
+			wantCode: CodeBarNegativeY,
+			wantMsg:  "⚠ hbar: negative y",
+		},
+		{
+			name:     "bar-negative-y-vbar",
+			src:      "---\ndata:\n  - x: 1\n    y: -5\n---\n[ @data | vbar ]",
+			wantCode: CodeBarNegativeY,
+			wantMsg:  "⚠ vbar: negative y",
+		},
+		{
+			name:     "bar-duplicate-x-bar-alias",
+			src:      "---\ndata:\n  - x: a\n    y: 1\n  - x: a\n    y: 2\n---\n[ @data | bar ]",
+			wantCode: CodeBarDuplicateX,
+			wantMsg:  `⚠ bar: duplicate x "a"`,
+		},
+		{
+			name:     "bar-duplicate-x-hbar",
+			src:      "---\ndata:\n  - x: a\n    y: 1\n  - x: a\n    y: 2\n---\n[ @data | hbar ]",
+			wantCode: CodeBarDuplicateX,
+			wantMsg:  `⚠ hbar: duplicate x "a"`,
+		},
+		{
+			name:     "bar-duplicate-x-vbar",
+			src:      "---\ndata:\n  - x: a\n    y: 1\n  - x: a\n    y: 2\n---\n[ @data | vbar ]",
+			wantCode: CodeBarDuplicateX,
+			wantMsg:  `⚠ vbar: duplicate x "a"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ast := Parse(tc.src)
+			if tc.dataHack != nil {
+				ast.Meta.Data = tc.dataHack
+			}
+			b := firstErroringBox(ast)
+			if b == nil {
+				t.Fatalf("no box produced a renderer-level error in %q", tc.src)
+			}
+			code, msg, ok := rendererInlineError(b, ast.Meta)
+			if !ok {
+				t.Fatalf("rendererInlineError returned ok=false for picked box")
+			}
+			if code != tc.wantCode {
+				t.Errorf("code = %q, want %q", code, tc.wantCode)
+			}
+			if msg != tc.wantMsg {
+				t.Errorf("msg = %q, want %q", msg, tc.wantMsg)
+			}
+		})
+	}
+}
+
+// TestRendererInlineErrorCleanBoxes asserts that boxes with no
+// renderer-level issue return ok=false. Locks the contract that the
+// helper never produces a spurious ⚠ for healthy sources.
+func TestRendererInlineErrorCleanBoxes(t *testing.T) {
+	sources := []string{
+		"[ hello ]",
+		"[ hello | text ]",
+		"---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data | bar ]",
+		"---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data | hbar ]",
+		"---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data | vbar ]",
+	}
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			ast := Parse(src)
+			walkBoxes(ast, func(b *Box) {
+				if _, _, ok := rendererInlineError(b, ast.Meta); ok {
+					t.Errorf("unexpected renderer error on clean source %q (box span %+v)",
+						src, b.Span)
+				}
+			})
+		})
+	}
+}
+
+// firstErroringBox returns the first Box (pre-order) that yields a
+// renderer-level error. Test-only helper.
+func firstErroringBox(ast *Box) *Box {
+	var out *Box
+	walkBoxes(ast, func(b *Box) {
+		if out != nil {
+			return
+		}
+		if _, _, ok := rendererInlineError(b, ast.Meta); ok {
+			out = b
+		}
+	})
+	return out
+}

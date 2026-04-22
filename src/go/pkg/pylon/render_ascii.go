@@ -48,16 +48,20 @@ func RenderRows(ast *Box) []string {
 		targetW = &w
 		targetH = &h
 	}
-	rows := renderBoxRows(ast, bc, targetW, targetH)
-	return overlayCrossRowGutter(rows, ast, bc)
+	data := ast.Meta.Data
+	rows := renderBoxRows(ast, bc, targetW, targetH, data)
+	return overlayCrossRowGutter(rows, ast, bc, data)
 }
 
 const (
 	naturalPad = 3
 )
 
-// renderBoxRows mirrors the JS function of the same name.
-func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int) []string {
+// renderBoxRows mirrors the JS function of the same name. The data
+// argument carries the root's frontmatter series map so chart boxes
+// anywhere in the tree can resolve @ref; normal (non-chart) boxes
+// ignore it.
+func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int, data interface{}) []string {
 	items := ast.Items
 	align := ast.Align
 	if align == "" {
@@ -87,9 +91,20 @@ func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int) []string {
 		sizedContentW = &cw
 	}
 
-	itemRows := []string{}
-	for _, it := range items {
-		itemRows = append(itemRows, renderItemRows(it, bc, sizedContentW)...)
+	// Chart dispatch: any box that carries a renderer OR a bare @ref
+	// goes through applyChartRenderer so the shared rendererInlineError
+	// helper can emit the ⚠ row for malformed inputs (including the
+	// bare-@ref case where Renderer is empty). nil signals the
+	// "| text over raw text" no-op, where the normal Items path runs.
+	var itemRows []string
+	if ast.Renderer != "" || firstDataRef(ast) != nil {
+		itemRows = applyChartRenderer(ast, data, bc)
+	}
+	if itemRows == nil {
+		itemRows = []string{}
+		for _, it := range items {
+			itemRows = append(itemRows, renderItemRows(it, bc, sizedContentW, data)...)
+		}
 	}
 	naturalContentW := 1
 	for _, r := range itemRows {
@@ -141,15 +156,16 @@ func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int) []string {
 	return out
 }
 
-// renderItemRows renders one AST item to its natural rows.
-func renderItemRows(n Node, bc boxChars, maxW *int) []string {
+// renderItemRows renders one AST item to its natural rows. data is
+// threaded down so nested chart boxes can resolve @ref.
+func renderItemRows(n Node, bc boxChars, maxW *int, data interface{}) []string {
 	switch x := n.(type) {
 	case *Text:
 		return []string{x.Content}
 	case *Box:
-		return renderBoxRows(x, bc, nil, nil)
+		return renderBoxRows(x, bc, nil, nil, data)
 	case *Row:
-		return renderRowRows(x, bc, maxW)
+		return renderRowRows(x, bc, maxW, data)
 	}
 	return nil
 }
@@ -162,7 +178,10 @@ func edgeHeads(direction string) (head, tail bool) {
 }
 
 // edgeString returns the inline-text representation of an edge.
-func edgeString(e *Edge, bc boxChars) string {
+// data is threaded for the edge-label case so a chart renderer
+// inside `( @ref | bar )` would resolve — grammar permits it even
+// though no current fixture uses it.
+func edgeString(e *Edge, bc boxChars, data interface{}) string {
 	head, tail := edgeHeads(e.Direction)
 	leftArrow := ""
 	if tail {
@@ -173,7 +192,7 @@ func edgeString(e *Edge, bc boxChars) string {
 		rightArrow = bc.arrowR
 	}
 	if e.Label != nil {
-		labelRows := renderBoxRows(e.Label, bc, nil, nil)
+		labelRows := renderBoxRows(e.Label, bc, nil, nil, data)
 		labelText := ""
 		if len(labelRows) > 0 {
 			labelText = labelRows[0]
@@ -197,7 +216,7 @@ type rowPart struct {
 	height int
 }
 
-func renderRowRows(row *Row, bc boxChars, maxW *int) []string {
+func renderRowRows(row *Row, bc boxChars, maxW *int, data interface{}) []string {
 	linear := []Node{}
 	for _, it := range row.Items {
 		if r, ok := it.(*Ref); ok {
@@ -216,14 +235,14 @@ func renderRowRows(row *Row, bc boxChars, maxW *int) []string {
 	parts := make([]rowPart, 0, len(linear))
 	for _, it := range linear {
 		if e, ok := it.(*Edge); ok {
-			txt := edgeString(e, bc)
+			txt := edgeString(e, bc, data)
 			parts = append(parts, rowPart{
 				kind: "edge", edge: e, item: it, text: txt,
 				width: displayWidth(txt),
 			})
 			continue
 		}
-		rows := renderItemRows(it, bc, nil)
+		rows := renderItemRows(it, bc, nil, data)
 		w := 0
 		for _, r := range rows {
 			if rw := displayWidth(r); rw > w {
@@ -241,7 +260,7 @@ func renderRowRows(row *Row, bc boxChars, maxW *int) []string {
 		totalWidth += p.width
 	}
 	if maxW != nil && totalWidth > *maxW {
-		return renderVerticalChain(parts, bc)
+		return renderVerticalChain(parts, bc, data)
 	}
 
 	h := 1
@@ -590,7 +609,7 @@ func ensureWidth(r *[]rune, n int) {
 // renderVerticalChain mirrors the JS fallback used when a row exceeds
 // its maxW budget. Not exercised by the current fixture set but kept
 // for parity.
-func renderVerticalChain(parts []rowPart, bc boxChars) []string {
+func renderVerticalChain(parts []rowPart, bc boxChars, data interface{}) []string {
 	blocks := []rowPart{}
 	for _, p := range parts {
 		if p.kind == "block" {
@@ -621,7 +640,7 @@ func renderVerticalChain(parts []rowPart, bc boxChars) []string {
 		}
 		result = append(result, padRow(top, maxW, AlignCenter, 1))
 		if p.edge.Label != nil {
-			labelRows := renderBoxRows(p.edge.Label, bc, nil, nil)
+			labelRows := renderBoxRows(p.edge.Label, bc, nil, nil, data)
 			label := ""
 			if len(labelRows) > 0 {
 				label = labelRows[0]
@@ -640,8 +659,10 @@ func renderVerticalChain(parts []rowPart, bc boxChars) []string {
 // ---- cross-row gutter --------------------------------------------
 
 // overlayCrossRowGutter draws the right-side arcs for any top-level
-// cross-row refs. Shallow — only top-level items participate.
-func overlayCrossRowGutter(rows []string, ast *Box, bc boxChars) []string {
+// cross-row refs. Shallow — only top-level items participate. data
+// threads through to the inner renderItemRows calls for consistency
+// with the main render path.
+func overlayCrossRowGutter(rows []string, ast *Box, bc boxChars, data interface{}) []string {
 	items := ast.Items
 	hasCross := false
 	for _, it := range items {
@@ -689,7 +710,7 @@ func overlayCrossRowGutter(rows []string, ast *Box, bc boxChars) []string {
 	itemStart := map[Node]int{}
 	cursor := 0
 	for _, item := range items {
-		r := renderItemRows(item, bc, sizedContentW)
+		r := renderItemRows(item, bc, sizedContentW, data)
 		perItemRows[item] = r
 		itemStart[item] = cursor
 		cursor += len(r)
@@ -774,11 +795,11 @@ func overlayCrossRowGutter(rows []string, ast *Box, bc boxChars) []string {
 				if e, ok := it.(*Edge); ok {
 					parts = append(parts, rowPart{
 						kind: "edge", item: it, edge: e,
-						width: displayWidth(edgeString(e, bc)),
+						width: displayWidth(edgeString(e, bc, data)),
 					})
 					continue
 				}
-				subR := renderItemRows(it, bc, nil)
+				subR := renderItemRows(it, bc, nil, data)
 				w := 0
 				for _, x := range subR {
 					if xw := displayWidth(x); xw > w {
