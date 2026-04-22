@@ -14,9 +14,9 @@ build: $(SUBDIR)	# build the binary/library
 
 upgrade:			# upgrade all the necessary packages
 
-install:			# copy syntax/ and ftdetect/ into $(VIM_PACK)
+install:			# copy syntax/, ftdetect/, and lua/ into $(VIM_PACK)
 	@mkdir -p $(VIM_PACK)
-	@cp -r syntax ftdetect $(VIM_PACK)/
+	@cp -r syntax ftdetect lua $(VIM_PACK)/
 
 uninstall:			# remove $(VIM_PACK) entirely
 	@rm -rf $(VIM_PACK)
