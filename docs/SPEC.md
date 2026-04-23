@@ -274,7 +274,7 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships three renderers. Unknown names surface an inline
+Pylon 0.2.0 ships four renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
 | Renderer       | Input              | Output                                                                   |
@@ -282,8 +282,12 @@ Pylon 0.2.0 ships three renderers. Unknown names surface an inline
 | `text`         | string or `@ref`   | Pass-through; `@ref` is emitted via `JSON.stringify`.                    |
 | `hbar` (`bar`) | `@ref` → `[{x,y}]` | Horizontal bars scaled against `max(y)` with `(value)` labels.           |
 | `vbar`         | `@ref` → `[{x,y}]` | Vertical bars scaled against `max(y)`; `x` and `(value)` labels as feet. |
+| `banner`       | literal string     | 6-row block-letter banner of the uppercased source text.                 |
 
-`bar` is a v0.1 alias for `hbar`; both render identically.
+`bar` is a v0.1 alias for `hbar`; both render identically. `banner`
+is Go-only in v1 — the JS renderer surfaces `⚠ unknown renderer:
+banner` until parity lands. See
+[`ROADMAP.md`](ROADMAP.md).
 
 ### `text`
 
@@ -369,6 +373,34 @@ HEIGHT. Each series entry becomes a single-column bar; column width
 is `max(|label|, |(value)|, 3)`. The two footer rows carry the `x`
 label and `(value)` text. All-zero `y` renders zero-height bars — not
 an error.
+
+### banner
+
+```pylon
+[ Pylon | banner ]
+```
+
+```txt
+┌──────────────────────────────────────────────────┐
+│   ██████╗ ██╗   ██╗██╗      ██████╗ ███╗   ██╗   │
+│   ██╔══██╗╚██╗ ██╔╝██║     ██╔═══██╗████╗  ██║   │
+│   ██████╔╝ ╚████╔╝ ██║     ██║   ██║██╔██╗ ██║   │
+│   ██╔═══╝   ╚██╔╝  ██║     ██║   ██║██║╚██╗██║   │
+│   ██║        ██║   ███████╗╚██████╔╝██║ ╚████║   │
+│   ╚═╝        ╚═╝   ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝   │
+└──────────────────────────────────────────────────┘
+```
+
+`banner` renders the box's literal text as 6-row block letters.
+Input is uppercased before lookup; the supported set is `A-Z`,
+`0-9`, space, and `. , ! ? - ' "`. Unknown runes fall back to the
+`?` glyph. `theme: ascii` swaps the ANSI-shadow box-drawing glyphs
+for a `#` + space grid.
+
+v1 is literal-string only. A `@ref` inside a `| banner` box is
+silently ignored in Go; the JS renderer has no `banner` at all in
+v1 and surfaces `⚠ unknown renderer: banner` instead. Parity is
+tracked in [`ROADMAP.md`](ROADMAP.md).
 
 ## Error model
 

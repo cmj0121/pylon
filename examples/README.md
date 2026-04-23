@@ -16,6 +16,7 @@ or by copying the source into a `<pylon-chart>` element.
 | [edge-labels.pylon](edge-labels.pylon)     | Labelled edge between two nodes                     |
 | [chart-hbar.pylon](chart-hbar.pylon)       | Horizontal bar chart from `data:` frontmatter       |
 | [chart-vbar.pylon](chart-vbar.pylon)       | Vertical bar chart from `data:` frontmatter         |
+| [banner.pylon](banner.pylon)               | Block-letter banner of a literal string             |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
 
 ## hello.pylon
@@ -178,6 +179,23 @@ data:
 │    1   2   3     │
 │   (10)(20)(15)   │
 └──────────────────┘
+```
+
+## banner.pylon
+
+```pylon
+[ Pylon | banner ]
+```
+
+```txt
+┌──────────────────────────────────────────────────┐
+│   ██████╗ ██╗   ██╗██╗      ██████╗ ███╗   ██╗   │
+│   ██╔══██╗╚██╗ ██╔╝██║     ██╔═══██╗████╗  ██║   │
+│   ██████╔╝ ╚████╔╝ ██║     ██║   ██║██╔██╗ ██║   │
+│   ██╔═══╝   ╚██╔╝  ██║     ██║   ██║██║╚██╗██║   │
+│   ██║        ██║   ███████╗╚██████╔╝██║ ╚████║   │
+│   ╚═╝        ╚═╝   ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝   │
+└──────────────────────────────────────────────────┘
 ```
 
 ## theme-ascii.pylon

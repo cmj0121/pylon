@@ -114,15 +114,15 @@ and the bundled install target.
 | name      | `[ x :: NAME ]` | Tag a node with `NAME` so it can be referenced later.                 |
 | ref       | `&NAME`         | Reference a previously named node.                                    |
 | data ref  | `@NAME`         | Reference a data series from frontmatter.                             |
-| renderer  | `\| NAME`       | Pipe box content to a renderer, e.g. `\| bar`.                        |
+| renderer  | `\| NAME`       | Pipe box content to a renderer: `\| bar`, `\| vbar`, `\| banner`.     |
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full grammar, renderer
 catalogue, and error model.
 
 ## Learn more
 
-- [`examples/`](examples/) — ten standalone sample files, one per
-  feature.
+- [`examples/`](examples/) — eleven standalone sample files, one
+  per feature.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.
 - [`docs/LSP.md`](docs/LSP.md) — Language Server reference (install,
   editor setup, diagnostics catalogue).
