@@ -1201,6 +1201,77 @@
   const BAR_HEIGHT_DEFAULT = 10;
   const BAR_GLYPH = "\u2588";
 
+  // Progress primitive. Fixed 20-cell budget; glyphs swap between
+  // Unicode (full block + light shade) and ASCII (`#` + `.`) based
+  // on reference equality with ASCII_BOX. Mirrors Go's
+  // render_progress.go constants byte-for-byte so the two sides
+  // cannot drift on layout.
+  const PROGRESS_BUDGET = 20;
+  const PROGRESS_FILLED_DEFAULT = "\u2588"; // FULL BLOCK
+  const PROGRESS_EMPTY_DEFAULT = "\u2591"; // LIGHT SHADE
+  const PROGRESS_FILLED_ASCII = "#";
+  const PROGRESS_EMPTY_ASCII = ".";
+
+  // clampPercent silently clamps into [0, 100]; NaN collapses to 0
+  // so a malformed scalar renders deterministic output instead of
+  // leaking "NaN%" into the grid. The validator still surfaces the
+  // shape error upstream.
+  const clampPercent = (y) => {
+    if (typeof y !== "number" || Number.isNaN(y)) return 0;
+    if (y < 0) return 0;
+    if (y > 100) return 100;
+    return y;
+  };
+
+  // progressGlyphs picks (filled, empty) glyphs for the active theme.
+  // Reference-equality mirrors banner's `bc === ASCII_BOX` check.
+  const progressGlyphs = (bc) =>
+    bc === ASCII_BOX
+      ? [PROGRESS_FILLED_ASCII, PROGRESS_EMPTY_ASCII]
+      : [PROGRESS_FILLED_DEFAULT, PROGRESS_EMPTY_DEFAULT];
+
+  // renderProgressRow formats "{bar-20} {pct-4}" -- the tail shared
+  // by both scalar and series forms. padStart(3) produces "100",
+  // " 75", "  0"; appended "%" produces the 4-cell column.
+  const renderProgressRow = (y, filled, empty) => {
+    const pct = clampPercent(y);
+    let cells = Math.round((pct / 100) * PROGRESS_BUDGET);
+    if (cells < 0) cells = 0;
+    if (cells > PROGRESS_BUDGET) cells = PROGRESS_BUDGET;
+    const bar = filled.repeat(cells) + empty.repeat(PROGRESS_BUDGET - cells);
+    const pctStr = String(Math.round(pct)).padStart(3, " ") + "%";
+    return `${bar} ${pctStr}`;
+  };
+
+  // renderProgressSeries lays out N rows: "{label-right-pad} {bar} {pct}".
+  // labelW is the widest x column so every row lines up.
+  const renderProgressSeries = (series, filled, empty) => {
+    let labelW = 0;
+    const labels = series.map((e) => {
+      const s = String(e.x);
+      if (s.length > labelW) labelW = s.length;
+      return s;
+    });
+    return series.map((e, i) => {
+      const label = labels[i].padStart(labelW, " ");
+      return `${label} ${renderProgressRow(e.y, filled, empty)}`;
+    });
+  };
+
+  // parseProgressScalar reads the concatenated text of a renderer
+  // body as a finite number. Returns null when the body is empty,
+  // all-whitespace, or carries any non-numeric character -- the
+  // validator uses the null case to surface the
+  // `\u26a0 progress: expected number` diagnostic.
+  const parseProgressScalar = (text) => {
+    if (typeof text !== "string") return null;
+    const trimmed = text.trim();
+    if (trimmed === "") return null;
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return null;
+    return n;
+  };
+
   // Shared validation for bar-family renderers (hbar, vbar). Returns an
   // inline-error row array on failure or `null` on success. `name` is
   // the invoked renderer name so the error text carries it.
@@ -1528,6 +1599,24 @@
       rows.push(values.map((s, i) => padRow(s, colW[i], "center")).join(""));
       return rows;
     },
+
+    // Progress bars. Two shapes:
+    //   - scalar: `[ 75 | progress ]` → single row "{bar-20} {pct-4}".
+    //     applyChartRenderer passes the pre-parsed number through as
+    //     `input` (wrapped `{ kind: "scalar", y }`).
+    //   - series: `[ @ref | progress ]` → N rows, "{label} {bar} {pct}"
+    //     per entry. Passed in as `{ kind: "series", series }` after
+    //     validateBarSeries has cleared it.
+    // Out-of-range y values silently clamp to [0, 100] inside the row
+    // formatter; NaN maps to 0.
+    progress(input, bc) {
+      const [filled, empty] = progressGlyphs(bc);
+      if (input && input.kind === "series") {
+        return renderProgressSeries(input.series, filled, empty);
+      }
+      const y = input && typeof input.y === "number" ? input.y : 0;
+      return [renderProgressRow(y, filled, empty)];
+    },
   };
 
   // Inspect a renderer-tagged box and rewrite its items to either the
@@ -1568,6 +1657,24 @@
     const dataRefs = items.filter((it) => it && it.type === "dataRef");
     const hasRef = dataRefs.length > 0;
 
+    // Progress has a scalar path (no dataRef): parse the literal text
+    // as a number, then hand the renderer `{kind:"scalar", y}`. The
+    // series path below reuses the shared bar-series validator with
+    // "progress" threaded through so its shape errors read
+    // `\u26a0 progress: expected [{x,y}]` etc.
+    if (name === "progress" && !hasRef) {
+      const rawText = items
+        .filter((it) => it && it.type === "text")
+        .map((it) => it.content)
+        .join("");
+      const y = parseProgressScalar(rawText);
+      if (y === null) {
+        return inlineError(`\u26a0 progress: expected number`);
+      }
+      const rendered = handler({ kind: "scalar", y }, bc);
+      return rendered.map((r) => ({ type: "text", content: r }));
+    }
+
     if (hasRef) {
       const ref = dataRefs[0];
       if (!dataMap || typeof dataMap !== "object") {
@@ -1585,6 +1692,15 @@
           return inlineError(`\u26a0 @${ref.name} not found`);
         }
         refValue = dataMap[ref.name];
+      }
+      // Progress series routes through validateBarSeries so its
+      // shape diagnostics share the bar-family wire text -- just
+      // with "progress" as the renderer name.
+      if (name === "progress") {
+        const err = validateBarSeries(refValue, "progress");
+        if (err) return inlineError(err[0]);
+        const rendered = handler({ kind: "series", series: refValue }, bc);
+        return rendered.map((r) => ({ type: "text", content: r }));
       }
       const rendered = handler(refValue, bc, budgetW);
       return rendered

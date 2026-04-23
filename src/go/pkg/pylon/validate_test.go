@@ -404,6 +404,32 @@ func TestRendererInlineErrorCatalogue(t *testing.T) {
 			wantCode: CodeBarDuplicateX,
 			wantMsg:  `⚠ vbar: duplicate x "a"`,
 		},
+		{
+			name:     "progress-not-number",
+			src:      "[ hello | progress ]",
+			wantCode: CodeProgressNotNumber,
+			wantMsg:  "⚠ progress: expected number",
+		},
+		{
+			name:     "progress-series-shape",
+			src:      "[ @s | progress ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ progress: expected [{x,y}]",
+		},
+		{
+			name:     "progress-series-empty",
+			src:      "[ @s | progress ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ progress: empty series",
+		},
+		{
+			name:     "progress-series-negative-y",
+			src:      "---\ndata:\n  - x: 1\n    y: -5\n---\n[ @data | progress ]",
+			wantCode: CodeBarNegativeY,
+			wantMsg:  "⚠ progress: negative y",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -439,6 +465,9 @@ func TestRendererInlineErrorCleanBoxes(t *testing.T) {
 		"---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data | bar ]",
 		"---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data | hbar ]",
 		"---\ndata:\n  - x: 1\n    y: 10\n---\n[ @data | vbar ]",
+		"[ 75 | progress ]",
+		"[ 150 | progress ]",
+		"---\ndata:\n  - x: a\n    y: 50\n---\n[ @data | progress ]",
 	}
 	for _, src := range sources {
 		t.Run(src, func(t *testing.T) {

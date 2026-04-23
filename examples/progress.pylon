@@ -1,0 +1,13 @@
+---
+data:
+  release:
+    - x: spec
+      y: 100
+    - x: code
+      y: 85
+    - x: tests
+      y: 60
+    - x: docs
+      y: 40
+---
+[ @release | progress ]

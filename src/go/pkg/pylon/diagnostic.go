@@ -28,6 +28,7 @@ const (
 	CodeBarEmpty        Code = "bar.empty"              // bar-family series has zero entries
 	CodeBarNegativeY    Code = "bar.negative_y"         // bar-family entry has y < 0
 	CodeBarDuplicateX   Code = "bar.duplicate_x"        // bar-family series has duplicate x keys
+	CodeProgressNotNumber Code = "progress.not_number"  // `| progress` over a scalar body that doesn't parse as a number
 )
 
 // Diagnostic is one complaint about the source. Message text matches

@@ -274,15 +274,16 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships four renderers. Unknown names surface an inline
+Pylon 0.2.0 ships five renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
-| Renderer       | Input              | Output                                                                   |
-| -------------- | ------------------ | ------------------------------------------------------------------------ |
-| `text`         | string or `@ref`   | Pass-through; `@ref` is emitted via `JSON.stringify`.                    |
-| `hbar` (`bar`) | `@ref` → `[{x,y}]` | Horizontal bars scaled against `max(y)` with `(value)` labels.           |
-| `vbar`         | `@ref` → `[{x,y}]` | Vertical bars scaled against `max(y)`; `x` and `(value)` labels as feet. |
-| `banner`       | literal string     | 6-row block-letter banner of the uppercased source text.                 |
+| Renderer       | Input                      | Output                                                          |
+| -------------- | -------------------------- | --------------------------------------------------------------- |
+| `text`         | string or `@ref`           | Pass-through; `@ref` emitted via `JSON.stringify`.              |
+| `hbar` (`bar`) | `@ref` → `[{x,y}]`         | Horizontal bars scaled against `max(y)` with `(value)` labels.  |
+| `vbar`         | `@ref` → `[{x,y}]`         | Vertical bars scaled against `max(y)`; `x`/`(value)` as feet.   |
+| `banner`       | literal string             | 6-row block-letter banner of the uppercased source text.        |
+| `progress`     | scalar or `@ref`→`[{x,y}]` | Progress bar(s) with a right-aligned `%` label; 20-cell budget. |
 
 `bar` is a v0.1 alias for `hbar`; both render identically.
 
@@ -398,6 +399,55 @@ v1 is literal-string only. A `@ref` inside a `| banner` box is
 silently ignored — a future release will resolve `@ref` to its
 value and render that instead.
 
+### progress
+
+```pylon
+[ 75 | progress ]
+```
+
+```txt
+┌───────────────────────────────┐
+│   ███████████████░░░░░  75%   │
+└───────────────────────────────┘
+```
+
+```pylon
+---
+data:
+  work:
+    - x: build
+      y: 100
+    - x: test
+      y: 70
+    - x: deploy
+      y: 10
+---
+[ @work | progress ]
+```
+
+```txt
+┌──────────────────────────────────────┐
+│    build ████████████████████ 100%   │
+│     test ██████████████░░░░░░  70%   │
+│   deploy ██░░░░░░░░░░░░░░░░░░  10%   │
+└──────────────────────────────────────┘
+```
+
+`progress` accepts two input shapes. A literal number in `[0,100]`
+renders a single row; a `@ref` pointing to `[{x,y}]` renders one row
+per entry with the `x` labels padded into a left-hand column. Each
+bar uses a 20-cell budget and is followed by a right-aligned `%3d%%`
+label. `y` values outside `[0,100]` are clamped silently (no
+diagnostic). Glyphs are `█` filled and `░` empty by default; `theme:
+ascii` swaps them for `#` and `.`.
+
+Scalar input that isn't a parseable number surfaces `⚠ progress:
+expected number`. Series input reuses the bar-shape validators, so a
+malformed series reports `progress: expected [{x,y}]`, `progress:
+empty series`, or `progress: duplicate x "…"` (negative `y` is
+caught as `progress: negative y` — out-of-range in the other
+direction is clamped rather than flagged).
+
 ## Error model
 
 Pylon surfaces errors through two channels.
@@ -413,16 +463,17 @@ Pylon surfaces errors through two channels.
 
 ### Render-time error catalogue
 
-| Trigger                            | Inline message               |
-| ---------------------------------- | ---------------------------- |
-| Raw string piped to non-`text`     | `bar: use @ref`              |
-| Unknown renderer name              | `unknown renderer: foo`      |
-| `@ref` not declared in frontmatter | `@missing not found`         |
-| Bare `@ref` with no renderer       | `@name: requires a renderer` |
-| Renderer got wrong shape           | `hbar: expected [{x,y}]`     |
-| Empty series for a bar renderer    | `hbar: empty series`         |
-| Any negative `y`                   | `hbar: negative y`           |
-| Duplicate `x` in series            | `hbar: duplicate x "a"`      |
+| Trigger                             | Inline message               |
+| ----------------------------------- | ---------------------------- |
+| Raw string piped to non-`text`      | `bar: use @ref`              |
+| Unknown renderer name               | `unknown renderer: foo`      |
+| `@ref` not declared in frontmatter  | `@missing not found`         |
+| Bare `@ref` with no renderer        | `@name: requires a renderer` |
+| Renderer got wrong shape            | `hbar: expected [{x,y}]`     |
+| Empty series for a bar renderer     | `hbar: empty series`         |
+| Any negative `y`                    | `hbar: negative y`           |
+| Duplicate `x` in series             | `hbar: duplicate x "a"`      |
+| Non-numeric scalar in `\| progress` | `progress: expected number`  |
 
 Bar-family errors (shape / empty / negative-y / duplicate-x) carry
 the actually-invoked renderer name: `hbar:` or `vbar:`. `bar` is an

@@ -17,6 +17,7 @@ or by copying the source into a `<pylon-chart>` element.
 | [chart-hbar.pylon](chart-hbar.pylon)       | Horizontal bar chart from `data:` frontmatter       |
 | [chart-vbar.pylon](chart-vbar.pylon)       | Vertical bar chart from `data:` frontmatter         |
 | [banner.pylon](banner.pylon)               | Block-letter banner of a literal string             |
+| [progress.pylon](progress.pylon)           | Progress bars with `%` labels from a `@ref` series  |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
 
 ## hello.pylon
@@ -196,6 +197,33 @@ data:
 │   ██║        ██║   ███████╗╚██████╔╝██║ ╚████║   │
 │   ╚═╝        ╚═╝   ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝   │
 └──────────────────────────────────────────────────┘
+```
+
+## progress.pylon
+
+```pylon
+---
+data:
+  release:
+    - x: spec
+      y: 100
+    - x: code
+      y: 85
+    - x: tests
+      y: 60
+    - x: docs
+      y: 40
+---
+[ @release | progress ]
+```
+
+```txt
+┌─────────────────────────────────────┐
+│    spec ████████████████████ 100%   │
+│    code █████████████████░░░  85%   │
+│   tests ████████████░░░░░░░░  60%   │
+│    docs ████████░░░░░░░░░░░░  40%   │
+└─────────────────────────────────────┘
 ```
 
 ## theme-ascii.pylon
