@@ -168,6 +168,75 @@ func TestRenderChart_UnknownRenderer(t *testing.T) {
 	}
 }
 
+// TestRenderProgress_Scalar locks the scalar form byte-for-byte.
+// Budget 20, y=75 → round(75/100*20)=15 filled cells; pct column
+// right-padded to "75%" inside the 4-cell "%3d%%" field.
+func TestRenderProgress_Scalar(t *testing.T) {
+	got := RenderASCII(Parse("[ 75 | progress ]"))
+	want := strings.Join([]string{
+		"┌───────────────────────────────┐",
+		"│   ███████████████░░░░░  75%   │",
+		"└───────────────────────────────┘",
+	}, "\n")
+	if got != want {
+		t.Errorf("progress scalar mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
+	}
+}
+
+// TestRenderProgress_Clamp asserts silent clamp: y=150 renders as
+// 100% (20 filled cells) without a diagnostic.
+func TestRenderProgress_Clamp(t *testing.T) {
+	got := RenderASCII(Parse("[ 150 | progress ]"))
+	if !strings.Contains(got, "████████████████████ 100%") {
+		t.Errorf("progress clamp should produce 20 filled + '100%%'; got:\n%s", got)
+	}
+	if strings.Contains(got, "⚠") {
+		t.Errorf("progress out-of-range should not warn inline; got:\n%s", got)
+	}
+}
+
+// TestRenderProgress_ASCIITheme asserts the ASCII theme swaps the
+// filled/empty glyphs to `#` / `.` and preserves the 20-cell budget.
+func TestRenderProgress_ASCIITheme(t *testing.T) {
+	src := "---\ntheme: ascii\n---\n[ 50 | progress ]"
+	got := RenderASCII(Parse(src))
+	if !strings.Contains(got, "##########..........  50%") {
+		t.Errorf("ASCII theme progress should use # / .; got:\n%s", got)
+	}
+}
+
+// TestRenderProgress_Series locks the series form: right-padded
+// label column, one row per entry, same "{bar} {pct}" tail.
+func TestRenderProgress_Series(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  work:",
+		"    - x: build",
+		"      y: 100",
+		"    - x: deploy",
+		"      y: 10",
+		"---",
+		"[ @work | progress ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	if !strings.Contains(got, " build ████████████████████ 100%") {
+		t.Errorf("progress series missing 100%% row:\n%s", got)
+	}
+	if !strings.Contains(got, "deploy ██░░░░░░░░░░░░░░░░░░  10%") {
+		t.Errorf("progress series missing 10%% row:\n%s", got)
+	}
+}
+
+// TestRenderProgress_NotNumber asserts the scalar path emits the
+// CodeProgressNotNumber inline warning for non-numeric bodies.
+func TestRenderProgress_NotNumber(t *testing.T) {
+	got := RenderASCII(Parse("[ hello | progress ]"))
+	if !strings.Contains(got, "⚠ progress: expected number") {
+		t.Errorf("expected progress-not-number warning; got:\n%s", got)
+	}
+}
+
 // TestRenderChart_DoesNotDisturbNormalBoxes is a regression guard:
 // normal (non-chart) boxes must render exactly as they did before
 // the chart dispatch was added.

@@ -81,11 +81,12 @@ func validateNames(root *Box) []Diagnostic {
 // its own name through for diagnostics — the user sees "⚠ bar: …"
 // when they wrote `| bar`, not the internal "⚠ hbar: …".
 var knownRenderers = map[string]bool{
-	"text":   true,
-	"hbar":   true,
-	"vbar":   true,
-	"bar":    true,
-	"banner": true,
+	"text":     true,
+	"hbar":     true,
+	"vbar":     true,
+	"bar":      true,
+	"banner":   true,
+	"progress": true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -162,7 +163,22 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 		return "", "", false
 	}
 
-	// bar / hbar / vbar: require a DataRef child.
+	// progress admits two shapes: scalar (literal number in Text
+	// content) or series (DataRef, validated as bar-shape below).
+	// The scalar path short-circuits when no DataRef is present so we
+	// don't emit a use-at-ref false positive for `[ 75 | progress ]`.
+	if b.Renderer == "progress" {
+		if ref := firstDataRef(b); ref == nil {
+			if _, ok := parseProgressScalar(b); !ok {
+				return CodeProgressNotNumber, "⚠ progress: expected number", true
+			}
+			return "", "", false
+		}
+	}
+
+	// bar / hbar / vbar / progress (series form): require a DataRef
+	// child. Progress is included so its series form shares the
+	// bar-shape diagnostics verbatim.
 	ref := firstDataRef(b)
 	if ref == nil {
 		return CodeUseAtRef, "⚠ " + b.Renderer + ": use @ref", true

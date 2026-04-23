@@ -1,0 +1,11 @@
+---
+data:
+  work:
+    - x: build
+      y: 100
+    - x: test
+      y: 70
+    - x: deploy
+      y: 10
+---
+[ @work | progress ]

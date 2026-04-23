@@ -57,6 +57,8 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		return renderVBar(chartSeries(b, data))
 	case "banner":
 		return renderBanner(b, bc)
+	case "progress":
+		return renderProgress(b, data, bc)
 	}
 	return nil
 }
