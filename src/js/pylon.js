@@ -1201,61 +1201,49 @@
   const BAR_HEIGHT_DEFAULT = 10;
   const BAR_GLYPH = "\u2588";
 
-  // Progress primitive. Fixed 20-cell budget; glyphs swap between
-  // Unicode (full block + light shade) and ASCII (`#` + `.`) based
-  // on reference equality with ASCII_BOX. Mirrors Go's
-  // render_progress.go constants byte-for-byte so the two sides
-  // cannot drift on layout.
+  // Progress primitive. Fixed 20-cell budget; glyphs swap under the
+  // ASCII theme. Constants mirror Go's render_progress.go so the two
+  // sides cannot drift on layout.
   const PROGRESS_BUDGET = 20;
   const PROGRESS_FILLED_DEFAULT = "\u2588"; // FULL BLOCK
   const PROGRESS_EMPTY_DEFAULT = "\u2591"; // LIGHT SHADE
   const PROGRESS_FILLED_ASCII = "#";
   const PROGRESS_EMPTY_ASCII = ".";
 
-  // clampPercent silently clamps into [0, 100]; NaN collapses to 0
-  // so a malformed scalar renders deterministic output instead of
-  // leaking "NaN%" into the grid. The validator still surfaces the
-  // shape error upstream.
+  // clampPercent folds y into [0, 100]; NaN maps to 0.
   const clampPercent = (y) => {
-    if (typeof y !== "number" || Number.isNaN(y)) return 0;
-    if (y < 0) return 0;
+    if (typeof y !== "number" || Number.isNaN(y) || y < 0) return 0;
     if (y > 100) return 100;
     return y;
   };
 
-  // progressGlyphs picks (filled, empty) glyphs for the active theme.
-  // Reference-equality mirrors banner's `bc === ASCII_BOX` check.
   const progressGlyphs = (bc) =>
     bc === ASCII_BOX
       ? [PROGRESS_FILLED_ASCII, PROGRESS_EMPTY_ASCII]
       : [PROGRESS_FILLED_DEFAULT, PROGRESS_EMPTY_DEFAULT];
 
-  // renderProgressRow formats "{bar-20} {pct-4}" -- the tail shared
-  // by both scalar and series forms. padStart(3) produces "100",
-  // " 75", "  0"; appended "%" produces the 4-cell column.
+  // renderProgressRow formats "{bar-20} {pct-4}": padStart(3)+"%"
+  // right-aligns the percent so "100%" sits flush and " 75%"/"  0%"
+  // lead with spaces.
   const renderProgressRow = (y, filled, empty) => {
     const pct = clampPercent(y);
-    let cells = Math.round((pct / 100) * PROGRESS_BUDGET);
-    if (cells < 0) cells = 0;
-    if (cells > PROGRESS_BUDGET) cells = PROGRESS_BUDGET;
+    const cells = Math.round((pct / 100) * PROGRESS_BUDGET);
     const bar = filled.repeat(cells) + empty.repeat(PROGRESS_BUDGET - cells);
-    const pctStr = String(Math.round(pct)).padStart(3, " ") + "%";
-    return `${bar} ${pctStr}`;
+    return `${bar} ${String(Math.round(pct)).padStart(3, " ") + "%"}`;
   };
 
-  // renderProgressSeries lays out N rows: "{label-right-pad} {bar} {pct}".
-  // labelW is the widest x column so every row lines up.
-  const renderProgressSeries = (series, filled, empty) => {
-    let labelW = 0;
-    const labels = series.map((e) => {
-      const s = String(e.x);
-      if (s.length > labelW) labelW = s.length;
-      return s;
-    });
-    return series.map((e, i) => {
-      const label = labels[i].padStart(labelW, " ");
-      return `${label} ${renderProgressRow(e.y, filled, empty)}`;
-    });
+  const renderProgressSeries = (series, bc) => {
+    const [filled, empty] = progressGlyphs(bc);
+    const labels = series.map((e) => String(e.x));
+    const labelW = labels.reduce((w, s) => Math.max(w, displayWidth(s)), 0);
+    return series.map(
+      (e, i) =>
+        `${padRow(labels[i], labelW, "right", 0)} ${renderProgressRow(
+          e.y,
+          filled,
+          empty,
+        )}`,
+    );
   };
 
   // parseProgressScalar reads the concatenated text of a renderer
@@ -1268,9 +1256,17 @@
     const trimmed = text.trim();
     if (trimmed === "") return null;
     const n = Number(trimmed);
-    if (!Number.isFinite(n)) return null;
-    return n;
+    return Number.isFinite(n) ? n : null;
   };
+
+  // collectTextContent concatenates the Content of every text item,
+  // mirroring Go's collectBoxText. Shared by the banner and
+  // progress-scalar dispatch branches.
+  const collectTextContent = (items) =>
+    items
+      .filter((it) => it && it.type === "text")
+      .map((it) => it.content)
+      .join("");
 
   // Shared validation for bar-family renderers (hbar, vbar). Returns an
   // inline-error row array on failure or `null` on success. `name` is
@@ -1554,9 +1550,7 @@
       return renderHBar(refValue, bc, budgetW, "bar");
     },
 
-    // Literal-text banner (6-row block letters). `text` is already
-    // uppercased and stripped of dataRefs by applyChartRenderer. The
-    // ASCII theme is detected via bc reference equality with ASCII_BOX;
+    // Literal-text banner. `text` is pre-uppercased by applyChartRenderer;
     // unknown runes fall back to '?' so fixtures stay deterministic.
     banner(text, bc) {
       if (text === "") return ["", "", "", "", "", ""];
@@ -1600,22 +1594,12 @@
       return rows;
     },
 
-    // Progress bars. Two shapes:
-    //   - scalar: `[ 75 | progress ]` → single row "{bar-20} {pct-4}".
-    //     applyChartRenderer passes the pre-parsed number through as
-    //     `input` (wrapped `{ kind: "scalar", y }`).
-    //   - series: `[ @ref | progress ]` → N rows, "{label} {bar} {pct}"
-    //     per entry. Passed in as `{ kind: "series", series }` after
-    //     validateBarSeries has cleared it.
-    // Out-of-range y values silently clamp to [0, 100] inside the row
-    // formatter; NaN maps to 0.
+    // Progress. Scalar input is a number, series input is the resolved
+    // `[{x,y}]` array; applyChartRenderer routes the right shape in.
     progress(input, bc) {
+      if (Array.isArray(input)) return renderProgressSeries(input, bc);
       const [filled, empty] = progressGlyphs(bc);
-      if (input && input.kind === "series") {
-        return renderProgressSeries(input.series, filled, empty);
-      }
-      const y = input && typeof input.y === "number" ? input.y : 0;
-      return [renderProgressRow(y, filled, empty)];
+      return [renderProgressRow(input, filled, empty)];
     },
   };
 
@@ -1634,44 +1618,23 @@
 
     if (!handler) return inlineError(`\u26a0 unknown renderer: ${name}`);
 
-    // Banner is literal-text only: concatenate Text items, ignore any
-    // dataRefs (mirrors Go's collectBannerText). Uppercase before
-    // handing to the renderer so font-table lookup is case-insensitive
-    // at the source; unknown runes fall back to the '?' glyph inside
-    // the handler itself.
+    // Banner is literal-text only: concatenate Text items, uppercase,
+    // and hand to the renderer. DataRef children are silently ignored.
     if (name === "banner") {
-      const rawText = items
-        .filter((it) => it && it.type === "text")
-        .map((it) => it.content)
-        .join("")
-        .toUpperCase();
-      const rendered = handler(rawText, bc);
+      const rendered = handler(collectTextContent(items).toUpperCase(), bc);
       return rendered.map((r) => ({ type: "text", content: r }));
     }
 
-    // A renderer-tagged body admits exactly one of:
-    //   - a single dataRef item       (renderer sees refValue)
-    //   - a single text/literal item  (renderer sees raw string)
-    //   - a mix / multi-item body     (treat as raw text w/ first text)
-    // Any other shape falls back to "raw string" path.
     const dataRefs = items.filter((it) => it && it.type === "dataRef");
     const hasRef = dataRefs.length > 0;
 
-    // Progress has a scalar path (no dataRef): parse the literal text
-    // as a number, then hand the renderer `{kind:"scalar", y}`. The
-    // series path below reuses the shared bar-series validator with
-    // "progress" threaded through so its shape errors read
-    // `\u26a0 progress: expected [{x,y}]` etc.
+    // Progress scalar: no dataRef means parse Text body as a number.
     if (name === "progress" && !hasRef) {
-      const rawText = items
-        .filter((it) => it && it.type === "text")
-        .map((it) => it.content)
-        .join("");
-      const y = parseProgressScalar(rawText);
+      const y = parseProgressScalar(collectTextContent(items));
       if (y === null) {
         return inlineError(`\u26a0 progress: expected number`);
       }
-      const rendered = handler({ kind: "scalar", y }, bc);
+      const rendered = handler(y, bc);
       return rendered.map((r) => ({ type: "text", content: r }));
     }
 
@@ -1693,13 +1656,12 @@
         }
         refValue = dataMap[ref.name];
       }
-      // Progress series routes through validateBarSeries so its
-      // shape diagnostics share the bar-family wire text -- just
-      // with "progress" as the renderer name.
+      // Progress series shares the bar-family shape validators so its
+      // diagnostics read `⚠ progress: ...` with matching wire text.
       if (name === "progress") {
         const err = validateBarSeries(refValue, "progress");
         if (err) return inlineError(err[0]);
-        const rendered = handler({ kind: "series", series: refValue }, bc);
+        const rendered = handler(refValue, bc);
         return rendered.map((r) => ({ type: "text", content: r }));
       }
       const rendered = handler(refValue, bc, budgetW);
@@ -1758,11 +1720,13 @@
   const renderBoxRows = (ast, bc, { targetW, targetH } = {}) => {
     const { items = [], align = "center", bordered } = ast;
 
-    // Rendered-chart boxes originally held a single source item (a
-    // dataRef or literal text); the post-rewrite items array is the
-    // chart's output rows, which should not re-trigger natural padding.
-    // Mirror Go: hasPad uses the SOURCE item count, so a `( X | banner )`
-    // prints flush against the frame edges.
+    // INVARIANT: a chart-tagged box has exactly one source item (a
+    // dataRef or literal text block); applyChartRenderer rewrites it
+    // to the chart's output rows before renderBoxRows sees it. hasPad
+    // must gate on the SOURCE count, not the rewritten count, so a
+    // borderless `( X | renderer )` prints flush. If a multi-source
+    // renderer is ever added, lift this assumption explicitly rather
+    // than silently mis-padding.
     const srcLen = ast.renderer ? 1 : items.length;
     const hasPad = bordered || srcLen > 1;
     const padBudget = hasPad ? 2 * NATURAL_PAD : 0;

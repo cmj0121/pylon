@@ -7,14 +7,8 @@ import (
 	"strings"
 )
 
-// Progress layout constants. The budget is fixed at 20 cells (see
-// design doc): a single-row bar that mirrors the JS side byte-for-
-// byte. progressFilledDefault / progressEmptyDefault pick the
-// Unicode glyphs; the ASCII theme swaps to ASCII fallbacks.
-//   - progressFilledDefault: U+2588 FULL BLOCK ("█")
-//   - progressEmptyDefault:  U+2591 LIGHT SHADE ("░")
-//   - progressFilledASCII:   "#"
-//   - progressEmptyASCII:    "."
+// Progress layout constants. Budget is fixed at 20 cells per row;
+// the glyph pair is swapped under `theme: ascii`.
 const (
 	progressBudget        = 20
 	progressFilledDefault = "█"
@@ -23,41 +17,32 @@ const (
 	progressEmptyASCII    = "."
 )
 
-// renderProgress dispatches a `| progress` box to either the scalar
-// path (literal number in Text content) or the series path
-// (resolved @ref → []{x,y}). rendererInlineError has already
-// verified the relevant shape by the time we reach here.
-func renderProgress(b *Box, data interface{}, bc boxChars) []string {
-	filled, empty := progressGlyphs(bc)
-	if ref := firstDataRef(b); ref != nil {
-		series, _ := lookupSeries(data, ref.Name)
-		arr, _ := series.([]map[string]interface{})
-		return renderProgressSeries(arr, filled, empty)
-	}
-	// Scalar path: the validator already ensured the concatenated
-	// Text parses as a number, so the error return is unreachable —
-	// a zero value renders as "0%" rather than panicking.
-	y, _ := parseProgressScalar(b)
-	return []string{renderProgressRow(y, filled, empty)}
-}
-
-// progressGlyphs picks the filled / empty cell glyphs for the active
-// theme. Mirrors renderBanner's `bc == asciiBox` check so the two
-// implementations stay in lockstep.
-func progressGlyphs(bc boxChars) (string, string) {
+// progressGlyphs picks the filled / empty cell glyphs for bc's theme.
+// Mirrors renderBanner's `bc == asciiBox` check.
+func progressGlyphs(bc boxChars) (filled, empty string) {
 	if bc == asciiBox {
 		return progressFilledASCII, progressEmptyASCII
 	}
 	return progressFilledDefault, progressEmptyDefault
 }
 
+// renderProgressScalar renders a `[ N | progress ]` box as a single
+// row. The validator has already verified the body parses as a
+// number, so any re-parse failure renders as 0 %.
+func renderProgressScalar(b *Box, bc boxChars) []string {
+	filled, empty := progressGlyphs(bc)
+	y, _ := parseProgressScalar(b)
+	return []string{renderProgressRow(y, filled, empty)}
+}
+
 // renderProgressSeries lays out N rows for a `[ @ref | progress ]`
-// box. Label column is right-padded to the widest entry; each row
-// is `{label} {bar-20} {pct-4}` with single-space separators.
-func renderProgressSeries(series []map[string]interface{}, filled, empty string) []string {
-	labelW := 0
+// box: `{label} {bar-20} {pct-4}` per row, single-space separators,
+// label column right-padded to the widest entry.
+func renderProgressSeries(series []map[string]interface{}, bc boxChars) []string {
+	filled, empty := progressGlyphs(bc)
 	labels := make([]string, len(series))
 	ys := make([]float64, len(series))
+	labelW := 0
 	for i, e := range series {
 		labels[i] = fmt.Sprintf("%v", e["x"])
 		y, _ := e["y"].(float64)
@@ -68,42 +53,25 @@ func renderProgressSeries(series []map[string]interface{}, filled, empty string)
 	}
 	out := make([]string, len(series))
 	for i := range series {
-		label := padRow(labels[i], labelW, AlignRight, 0)
-		out[i] = label + " " + renderProgressRow(ys[i], filled, empty)
+		out[i] = padRow(labels[i], labelW, AlignRight, 0) + " " + renderProgressRow(ys[i], filled, empty)
 	}
 	return out
 }
 
-// renderProgressRow formats the "{bar-20-cells} {pct-4}" tail shared
-// by both the scalar and series paths. The percentage column is
-// right-aligned within 4 cells (3-digit number + "%") so "100%" sits
-// flush and " 75%"/"  0%" lead with spaces.
+// renderProgressRow formats `{bar-20}{space}{pct-4}`. `%3d%%` right-
+// aligns the percent in 4 cells so "100%" sits flush while " 75%"
+// and "  0%" lead with spaces.
 func renderProgressRow(y float64, filled, empty string) string {
 	pct := clampPercent(y)
 	cells := int(math.Round(pct / 100 * float64(progressBudget)))
-	if cells < 0 {
-		cells = 0
-	}
-	if cells > progressBudget {
-		cells = progressBudget
-	}
 	bar := strings.Repeat(filled, cells) + strings.Repeat(empty, progressBudget-cells)
-	// "%3d%%" renders the percent right-aligned in 4 cells: "100%",
-	// " 75%", "  0%". The single-space separator plus the padded
-	// percent produces the two-space visual breathing room before
-	// sub-100 values noted in the design doc.
 	return bar + " " + fmt.Sprintf("%3d%%", int(math.Round(pct)))
 }
 
-// clampPercent silently clamps y into [0, 100]. NaN collapses to 0
-// so a malformed fixture still prints a deterministic row rather
-// than "NaN%". The validator is still responsible for surfacing
-// malformed scalar input — this is a renderer-level safety net.
+// clampPercent silently folds y into [0, 100]; NaN collapses to 0
+// so a malformed fixture prints "0%" rather than "NaN%".
 func clampPercent(y float64) float64 {
-	if math.IsNaN(y) {
-		return 0
-	}
-	if y < 0 {
+	if math.IsNaN(y) || y < 0 {
 		return 0
 	}
 	if y > 100 {
@@ -112,23 +80,19 @@ func clampPercent(y float64) float64 {
 	return y
 }
 
-// parseProgressScalar reads the concatenated Text content of a box
-// as a float. Whitespace is stripped. Returns (value, true) when the
-// body parses cleanly; (0, false) on NaN / empty / unparseable. The
-// validator calls this to decide between a clean render and the
-// CodeProgressNotNumber diagnostic.
+// parseProgressScalar reads the concatenated Text content of b as a
+// float. Returns (0, false) on empty, unparseable, NaN, or Inf. Used
+// by both the validator (to surface CodeProgressNotNumber) and the
+// renderer (to read the already-validated value).
 func parseProgressScalar(b *Box) (float64, bool) {
 	var sb strings.Builder
-	collectBannerText(b, &sb)
+	collectBoxText(b, &sb)
 	raw := strings.TrimSpace(sb.String())
 	if raw == "" {
 		return 0, false
 	}
 	y, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return 0, false
-	}
-	if math.IsNaN(y) || math.IsInf(y, 0) {
+	if err != nil || math.IsNaN(y) || math.IsInf(y, 0) {
 		return 0, false
 	}
 	return y, true

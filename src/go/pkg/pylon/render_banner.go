@@ -17,7 +17,7 @@ func renderBanner(b *Box, bc boxChars) []string {
 	}
 
 	var sb strings.Builder
-	collectBannerText(b, &sb)
+	collectBoxText(b, &sb)
 	text := strings.ToUpper(sb.String())
 
 	if text == "" {
@@ -42,10 +42,11 @@ func renderBanner(b *Box, bc boxChars) []string {
 	return out
 }
 
-// collectBannerText concatenates the Content of every *Text reachable
-// through b's Items and direct Row children. v1 is literal-string
-// only; Refs, DataRefs, nested Boxes, and Edges are ignored.
-func collectBannerText(b *Box, sb *strings.Builder) {
+// collectBoxText concatenates the Content of every *Text reachable
+// through b's Items and direct Row children. Shared by banner
+// (uppercases and looks up glyphs) and progress (parses as number);
+// Refs, DataRefs, nested Boxes, and Edges are ignored.
+func collectBoxText(b *Box, sb *strings.Builder) {
 	for _, it := range b.Items {
 		switch x := it.(type) {
 		case *Text:

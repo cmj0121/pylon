@@ -163,22 +163,16 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 		return "", "", false
 	}
 
-	// progress admits two shapes: scalar (literal number in Text
-	// content) or series (DataRef, validated as bar-shape below).
-	// The scalar path short-circuits when no DataRef is present so we
-	// don't emit a use-at-ref false positive for `[ 75 | progress ]`.
-	if b.Renderer == "progress" {
-		if ref := firstDataRef(b); ref == nil {
-			if _, ok := parseProgressScalar(b); !ok {
-				return CodeProgressNotNumber, "⚠ progress: expected number", true
-			}
-			return "", "", false
+	// progress scalar path: no DataRef means parse body as number.
+	// With a DataRef, fall through to the bar-shape validators below.
+	if b.Renderer == "progress" && firstDataRef(b) == nil {
+		if _, ok := parseProgressScalar(b); !ok {
+			return CodeProgressNotNumber, "⚠ progress: expected number", true
 		}
+		return "", "", false
 	}
 
-	// bar / hbar / vbar / progress (series form): require a DataRef
-	// child. Progress is included so its series form shares the
-	// bar-shape diagnostics verbatim.
+	// bar / hbar / vbar / progress (series form): require a DataRef.
 	ref := firstDataRef(b)
 	if ref == nil {
 		return CodeUseAtRef, "⚠ " + b.Renderer + ": use @ref", true
