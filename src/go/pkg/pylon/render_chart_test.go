@@ -237,6 +237,83 @@ func TestRenderProgress_NotNumber(t *testing.T) {
 	}
 }
 
+// TestRenderSparkline_Basic locks the eight-level default ramp
+// byte-for-byte. y = 0..7 mapped across the full ramp puts one
+// glyph per level in monotone order.
+func TestRenderSparkline_Basic(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  s:",
+		"    - x: 1",
+		"      y: 0",
+		"    - x: 2",
+		"      y: 1",
+		"    - x: 3",
+		"      y: 2",
+		"    - x: 4",
+		"      y: 3",
+		"    - x: 5",
+		"      y: 4",
+		"    - x: 6",
+		"      y: 5",
+		"    - x: 7",
+		"      y: 6",
+		"    - x: 8",
+		"      y: 7",
+		"---",
+		"[ @s | sparkline ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	want := strings.Join([]string{
+		"┌──────────────┐",
+		"│   ▁▂▃▄▅▆▇█   │",
+		"└──────────────┘",
+	}, "\n")
+	if got != want {
+		t.Errorf("sparkline mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
+	}
+}
+
+// TestRenderSparkline_Flat asserts a constant series collapses to
+// the lowest glyph for every cell (exercises the min == max branch).
+func TestRenderSparkline_Flat(t *testing.T) {
+	src := "---\ndata:\n  s:\n    - x: 1\n      y: 5\n    - x: 2\n      y: 5\n    - x: 3\n      y: 5\n---\n[ @s | sparkline ]"
+	got := RenderASCII(Parse(src))
+	if !strings.Contains(got, "▁▁▁") {
+		t.Errorf("flat sparkline should collapse to lowest glyph; got:\n%s", got)
+	}
+	if strings.Contains(got, "█") {
+		t.Errorf("flat sparkline should NOT paint any full blocks; got:\n%s", got)
+	}
+}
+
+// TestRenderSparkline_NegativeTolerated asserts sparkline (unlike the
+// bar family) accepts negative y and renders without a ⚠ warning.
+func TestRenderSparkline_NegativeTolerated(t *testing.T) {
+	src := "---\ndata:\n  s:\n    - x: 1\n      y: -5\n    - x: 2\n      y: 0\n    - x: 3\n      y: 5\n---\n[ @s | sparkline ]"
+	got := RenderASCII(Parse(src))
+	if strings.Contains(got, "⚠") {
+		t.Errorf("sparkline should NOT warn on negative y; got:\n%s", got)
+	}
+	// min = -5, max = 5, span = 10. y=-5 → idx 0 (▁); y=0 → idx 4 (▅);
+	// y=5 → idx 7 (█).
+	if !strings.Contains(got, "▁▅█") {
+		t.Errorf("expected ▁▅█ glyph sequence; got:\n%s", got)
+	}
+}
+
+// TestRenderSparkline_DuplicateXTolerated asserts sparkline does NOT
+// emit CodeBarDuplicateX — only the y-sequence matters, so repeated
+// x values are fine.
+func TestRenderSparkline_DuplicateXTolerated(t *testing.T) {
+	src := "---\ndata:\n  s:\n    - x: a\n      y: 1\n    - x: a\n      y: 2\n---\n[ @s | sparkline ]"
+	got := RenderASCII(Parse(src))
+	if strings.Contains(got, "duplicate") {
+		t.Errorf("sparkline should NOT warn on duplicate x; got:\n%s", got)
+	}
+}
+
 // TestRenderChart_DoesNotDisturbNormalBoxes is a regression guard:
 // normal (non-chart) boxes must render exactly as they did before
 // the chart dispatch was added.

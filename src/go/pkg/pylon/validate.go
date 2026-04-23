@@ -81,13 +81,14 @@ func validateNames(root *Box) []Diagnostic {
 // its own name through for diagnostics — the user sees "⚠ bar: …"
 // when they wrote `| bar`, not the internal "⚠ hbar: …".
 var knownRenderers = map[string]bool{
-	"text":     true,
-	"hbar":     true,
-	"vbar":     true,
-	"bar":      true,
-	"banner":   true,
-	"progress": true,
-	"heatmap":  true,
+	"text":      true,
+	"hbar":      true,
+	"vbar":      true,
+	"bar":       true,
+	"banner":    true,
+	"progress":  true,
+	"heatmap":   true,
+	"sparkline": true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -191,6 +192,12 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 	// sync on those diagnostics.
 	if b.Renderer == "heatmap" {
 		return validateHeatmapSeries(series)
+	}
+	// sparkline shares `[{x,y}]` with the bar family but tolerates
+	// negative y (trend viz) and duplicate x (y-sequence only), so it
+	// routes to a slimmer validator that skips those two checks.
+	if b.Renderer == "sparkline" {
+		return validateSparklineSeries(series)
 	}
 	return barSeriesInlineError(b.Renderer, series)
 }
