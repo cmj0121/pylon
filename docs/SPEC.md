@@ -284,10 +284,7 @@ Pylon 0.2.0 ships four renderers. Unknown names surface an inline
 | `vbar`         | `@ref` → `[{x,y}]` | Vertical bars scaled against `max(y)`; `x` and `(value)` labels as feet. |
 | `banner`       | literal string     | 6-row block-letter banner of the uppercased source text.                 |
 
-`bar` is a v0.1 alias for `hbar`; both render identically. `banner`
-is Go-only in v1 — the JS renderer surfaces `⚠ unknown renderer:
-banner` until parity lands. See
-[`ROADMAP.md`](ROADMAP.md).
+`bar` is a v0.1 alias for `hbar`; both render identically.
 
 ### `text`
 
@@ -398,9 +395,8 @@ Input is uppercased before lookup; the supported set is `A-Z`,
 for a `#` + space grid.
 
 v1 is literal-string only. A `@ref` inside a `| banner` box is
-silently ignored in Go; the JS renderer has no `banner` at all in
-v1 and surfaces `⚠ unknown renderer: banner` instead. Parity is
-tracked in [`ROADMAP.md`](ROADMAP.md).
+silently ignored — a future release will resolve `@ref` to its
+value and render that instead.
 
 ## Error model
 

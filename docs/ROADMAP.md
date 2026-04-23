@@ -59,15 +59,15 @@ shipped.
    Ref: [`../src/go/cmd/pylon/main.go`](../src/go/cmd/pylon/main.go),
    [`LSP.md` §CLI diagnostic mode](LSP.md#cli-diagnostic-mode).
 
-7. **`| banner` JS parity.** Go ships an ANSI-shadow block-letter
-   renderer on `feat/banner`; the JS reference still emits
-   `⚠ unknown renderer: banner` for the same source. Fixtures are
-   quarantined under `src/go/pkg/pylon/testdata_banner/` (sibling
-   to `testdata/`) so `scripts/pylon-parity.sh` stays green — a
-   follow-up branch will port the font tables to `src/js/pylon.js`
-   and move fixtures back into the parity corpus. Status: deferred.
+7. **`| banner` JS parity — CLOSED.** The ANSI-shadow block-letter
+   renderer now ships in both `src/go/pkg/pylon/render_banner.go`
+   and `src/js/pylon.js` (font tables inlined byte-for-byte). The
+   six banner fixtures are back under `src/go/pkg/pylon/testdata/`
+   and participate in `scripts/pylon-parity.sh`, bringing the
+   parity corpus to 31 fixtures. Shipped on `feat/banner-js`.
+   Status: **closed**.
    Ref: [`../src/go/pkg/pylon/render_banner.go`](../src/go/pkg/pylon/render_banner.go),
-   [`../src/go/pkg/pylon/testdata_banner/`](../src/go/pkg/pylon/testdata_banner/).
+   [`../src/js/pylon.js`](../src/js/pylon.js).
 
 ## Release engineering
 
