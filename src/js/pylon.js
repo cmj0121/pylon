@@ -1299,6 +1299,57 @@
     return null;
   };
 
+  // Sparkline ramps. Eight levels for the default theme (U+2581..
+  // U+2588) produce a smooth monotone shape; ASCII falls back to four
+  // levels since plain ASCII can't express a clean 8-step ramp.
+  // Constants mirror src/go/pkg/pylon/render_sparkline.go.
+  const SPARKLINE_GLYPHS_DEFAULT = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+  const SPARKLINE_GLYPHS_ASCII = ["_", "-", "*", "#"];
+
+  const sparklineGlyphs = (bc) =>
+    bc === ASCII_BOX ? SPARKLINE_GLYPHS_ASCII : SPARKLINE_GLYPHS_DEFAULT;
+
+  // validateSparklineSeries checks the resolved series against
+  // `[{x,y}]`. Slimmer than validateBarSeries -- sparkline tolerates
+  // negative y (trend viz; signed deltas are normal) and duplicate x
+  // (only the y-sequence is consumed, in order), so those two checks
+  // drop out. Returns an inline-error row array on failure or `null`
+  // on success.
+  const validateSparklineSeries = (refValue) => {
+    const shape = () => [`⚠ sparkline: expected [{x,y}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ sparkline: empty series`];
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") return shape();
+      if (!("x" in entry) || !("y" in entry)) return shape();
+      if (typeof entry.y !== "number" || Number.isNaN(entry.y)) return shape();
+    }
+    return null;
+  };
+
+  // renderSparkline lays out one glyph per series entry on a single
+  // row. Normalisation is relative -- (y-min)/(max-min) -- so the
+  // trend shape surfaces even when all values are large-and-positive,
+  // and signed values work naturally. A flat series (min == max)
+  // collapses to the lowest glyph for every cell.
+  const renderSparkline = (series, bc) => {
+    const glyphs = sparklineGlyphs(bc);
+    const n = glyphs.length;
+    let minV = series[0].y;
+    let maxV = series[0].y;
+    for (const e of series) {
+      if (e.y < minV) minV = e.y;
+      if (e.y > maxV) maxV = e.y;
+    }
+    const span = maxV - minV;
+    let row = "";
+    for (const e of series) {
+      const idx = span > 0 ? Math.round(((e.y - minV) / span) * (n - 1)) : 0;
+      row += glyphs[idx];
+    }
+    return [row];
+  };
+
   // renderHeatmap lays out `{label} {grid}` rows (no separators
   // between cells). Drops the label column when every label is the
   // empty string. maxV normalises across every row and column; a
@@ -1691,6 +1742,15 @@
       if (err) return err;
       return renderHeatmap(refValue, bc);
     },
+
+    // Sparkline. Series-only: `[{x,y}]`. Tolerates negative y and
+    // duplicate x so the validator is slimmer than bar's; on success
+    // the renderer returns a single-row array.
+    sparkline(refValue, bc) {
+      const err = validateSparklineSeries(refValue);
+      if (err) return err;
+      return renderSparkline(refValue, bc);
+    },
   };
 
   // Inspect a renderer-tagged box and rewrite its items to either the
@@ -1758,6 +1818,14 @@
       // family validator would misread the array-valued y.
       if (name === "heatmap") {
         const err = validateHeatmapSeries(refValue);
+        if (err) return inlineError(err[0]);
+        const rendered = handler(refValue, bc);
+        return rendered.map((r) => ({ type: "text", content: r }));
+      }
+      // Sparkline shares `[{x,y}]` with the bar family but tolerates
+      // negative y and duplicate x, so it routes to its own validator.
+      if (name === "sparkline") {
+        const err = validateSparklineSeries(refValue);
         if (err) return inlineError(err[0]);
         const rendered = handler(refValue, bc);
         return rendered.map((r) => ({ type: "text", content: r }));

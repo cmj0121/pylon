@@ -430,6 +430,20 @@ func TestRendererInlineErrorCatalogue(t *testing.T) {
 			wantCode: CodeBarNegativeY,
 			wantMsg:  "⚠ progress: negative y",
 		},
+		{
+			name:     "sparkline-shape",
+			src:      "[ @s | sparkline ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ sparkline: expected [{x,y}]",
+		},
+		{
+			name:     "sparkline-empty",
+			src:      "[ @s | sparkline ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ sparkline: empty series",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -468,6 +482,8 @@ func TestRendererInlineErrorCleanBoxes(t *testing.T) {
 		"[ 75 | progress ]",
 		"[ 150 | progress ]",
 		"---\ndata:\n  - x: a\n    y: 50\n---\n[ @data | progress ]",
+		"---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: -5\n---\n[ @data | sparkline ]",
+		"---\ndata:\n  - x: 1\n    y: 5\n  - x: 1\n    y: 5\n---\n[ @data | sparkline ]",
 	}
 	for _, src := range sources {
 		t.Run(src, func(t *testing.T) {

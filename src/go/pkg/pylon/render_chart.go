@@ -64,6 +64,8 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		return renderProgressScalar(b, bc)
 	case "heatmap":
 		return renderHeatmap(chartSeries(b, data), bc)
+	case "sparkline":
+		return renderSparkline(chartSeries(b, data), bc)
 	}
 	return nil
 }

@@ -257,6 +257,34 @@ const fixtures = [
     expect: (o) =>
       o.includes('\u26a0 vbar: duplicate x "a"') && !o.includes("\u2588"),
   },
+  {
+    name: "sparkline renderer paints one glyph per point across the full ramp",
+    src:
+      "---\ndata:\n  s:\n    - x: 1\n      y: 0\n    - x: 2\n      y: 1\n" +
+      "    - x: 3\n      y: 2\n    - x: 4\n      y: 3\n    - x: 5\n" +
+      "      y: 4\n    - x: 6\n      y: 5\n    - x: 7\n      y: 6\n" +
+      "    - x: 8\n      y: 7\n---\n[ @s | sparkline ]",
+    // ▁..█ is the default eight-level ramp.
+    expect: (o) => o.includes("▁▂▃▄▅▆▇█"),
+  },
+  {
+    name: "sparkline renderer tolerates negative y",
+    // min=-5, max=5, span=10. y=-5 -> idx 0 (▁),
+    // y=0 -> idx 4 (▅), y=5 -> idx 7 (█).
+    // Sparkline is the only chart primitive that accepts negative y.
+    src:
+      "---\ndata:\n  s:\n    - x: 1\n      y: -5\n    - x: 2\n      y: 0\n" +
+      "    - x: 3\n      y: 5\n---\n[ @s | sparkline ]",
+    expect: (o) => !o.includes("⚠") && o.includes("▁▅█"),
+  },
+  {
+    name: "sparkline renderer collapses a flat series to the lowest glyph",
+    src:
+      "---\ndata:\n  s:\n    - x: 1\n      y: 7\n    - x: 2\n      y: 7\n" +
+      "    - x: 3\n      y: 7\n---\n[ @s | sparkline ]",
+    // All-same y -> idx 0 for every cell; no full block.
+    expect: (o) => o.includes("▁▁▁") && !o.includes("█"),
+  },
 ];
 
 let failed = 0;
