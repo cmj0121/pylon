@@ -106,22 +106,22 @@ and the bundled install target.
 
 ## Syntax at a glance
 
-| Name      | Syntax          | Description                                                           |
-| --------- | --------------- | --------------------------------------------------------------------- |
-| node      | `[ LABEL ]`     | Bordered node. `( LABEL )` is the borderless variant.                 |
-| edge      | `->`            | Edge from the previous node to the next. `<-`, `<->`, `-->` etc. too. |
-| alignment | `-`             | Alignment marker flush with the bracket (`[- x -]` centers `x`).      |
-| name      | `[ x :: NAME ]` | Tag a node with `NAME` so it can be referenced later.                 |
-| ref       | `&NAME`         | Reference a previously named node.                                    |
-| data ref  | `@NAME`         | Reference a data series from frontmatter.                             |
-| renderer  | `\| NAME`       | Pipe box content to a renderer: `\| bar`, `\| vbar`, `\| banner`.     |
+| Name      | Syntax          | Description                                                                      |
+| --------- | --------------- | -------------------------------------------------------------------------------- |
+| node      | `[ LABEL ]`     | Bordered node. `( LABEL )` is the borderless variant.                            |
+| edge      | `->`            | Edge from the previous node to the next. `<-`, `<->`, `-->` etc. too.            |
+| alignment | `-`             | Alignment marker flush with the bracket (`[- x -]` centers `x`).                 |
+| name      | `[ x :: NAME ]` | Tag a node with `NAME` so it can be referenced later.                            |
+| ref       | `&NAME`         | Reference a previously named node.                                               |
+| data ref  | `@NAME`         | Reference a data series from frontmatter.                                        |
+| renderer  | `\| NAME`       | Pipe box content to a renderer: `\| bar`, `\| vbar`, `\| banner`, `\| progress`. |
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full grammar, renderer
 catalogue, and error model.
 
 ## Learn more
 
-- [`examples/`](examples/) — eleven standalone sample files, one
+- [`examples/`](examples/) — twelve standalone sample files, one
   per feature.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.
 - [`docs/LSP.md`](docs/LSP.md) — Language Server reference (install,
