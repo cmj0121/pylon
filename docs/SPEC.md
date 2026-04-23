@@ -277,7 +277,7 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships six renderers. Unknown names surface an inline
+Pylon 0.2.0 ships seven renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
 | Renderer       | Input                       | Output                                                          |
@@ -288,6 +288,7 @@ Pylon 0.2.0 ships six renderers. Unknown names surface an inline
 | `banner`       | literal string              | 6-row block-letter banner of the uppercased source text.        |
 | `progress`     | scalar or `@ref`→`[{x,y}]`  | Progress bar(s) with a right-aligned `%` label; 20-cell budget. |
 | `heatmap`      | `@ref` → `[{x, y:[n,...]}]` | 2D matrix of ramp glyphs (`░▒▓█` / `.+*#`).                     |
+| `sparkline`    | `@ref` → `[{x,y}]`          | Single-row ramp; 8 levels default / 4 levels ascii.             |
 
 `bar` is a v0.1 alias for `hbar`; both render identically.
 
@@ -494,6 +495,50 @@ surface `⚠ heatmap: expected [{x, y:[n,...]}]`. An empty series
 reports `heatmap: empty series`, and any negative value reports
 `heatmap: negative y` — the bar-family validators apply with the
 `heatmap:` prefix.
+
+### sparkline
+
+```pylon
+---
+data:
+  trend:
+    - x: 1
+      y: 12
+    - x: 2
+      y: 15
+    - x: 3
+      y: 9
+    - x: 4
+      y: 18
+    - x: 5
+      y: 14
+---
+[ @trend | sparkline ]
+```
+
+```txt
+┌───────────┐
+│   ▃▆▁█▅   │
+└───────────┘
+```
+
+`sparkline` accepts an `@ref` pointing to `[{x,y}]` and renders a
+single row of ramp glyphs — one per entry. `x` is ignored; only `y`
+drives the glyph. The ramp is `▁▂▃▄▅▆▇█` (8 levels, U+2581..U+2588)
+by default and `_-*#` (4 levels — the honest ceiling for a monotone
+ASCII height ramp) under `theme: ascii`.
+
+Normalization is **relative**: `idx = round((y - min) / (max - min) *
+(ramp.length - 1))`. The first occurrence of `min` always maps to
+the lowest glyph and `max` to the highest, so the trend shape pops
+even when every value is large. A flat series (`min == max`) renders
+as all-lowest-glyph — deterministic rather than division-by-zero.
+
+Unlike the bar family, sparkline **tolerates negative `y` and
+duplicate `x`**: trend viz over signed values (temperature deltas,
+price moves) is the canonical use. Shape problems still surface
+`⚠ sparkline: expected [{x,y}]`, and an empty series reports
+`sparkline: empty series` — no new diagnostic codes.
 
 ## Error model
 

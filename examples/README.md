@@ -19,6 +19,7 @@ or by copying the source into a `<pylon-chart>` element.
 | [banner.pylon](banner.pylon)               | Block-letter banner of a literal string             |
 | [progress.pylon](progress.pylon)           | Progress bars with `%` labels from a `@ref` series  |
 | [heatmap.pylon](heatmap.pylon)             | 2D matrix of ramp glyphs from a `@ref` series       |
+| [sparkline.pylon](sparkline.pylon)         | Inline trend row of ramp glyphs from a `@ref`       |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
 
 ## hello.pylon
@@ -252,6 +253,42 @@ data:
 │   Wed ░▓█▓░   │
 │   Thu  ░▒░    │
 └───────────────┘
+```
+
+## sparkline.pylon
+
+```pylon
+---
+data:
+  latency:
+    - x: 1
+      y: 42
+    - x: 2
+      y: 58
+    - x: 3
+      y: 31
+    - x: 4
+      y: 65
+    - x: 5
+      y: 49
+    - x: 6
+      y: 73
+    - x: 7
+      y: 38
+    - x: 8
+      y: 52
+    - x: 9
+      y: 61
+    - x: 10
+      y: 45
+---
+[ @latency | sparkline ]
+```
+
+```txt
+┌────────────────┐
+│   ▃▆▁▇▄█▂▅▆▃   │
+└────────────────┘
 ```
 
 ## theme-ascii.pylon
