@@ -55,6 +55,8 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		return renderHBar(chartSeries(b, data), bc, barWidthDefault)
 	case "vbar":
 		return renderVBar(chartSeries(b, data))
+	case "banner":
+		return renderBanner(b, bc)
 	}
 	return nil
 }

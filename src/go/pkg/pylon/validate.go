@@ -81,10 +81,11 @@ func validateNames(root *Box) []Diagnostic {
 // its own name through for diagnostics — the user sees "⚠ bar: …"
 // when they wrote `| bar`, not the internal "⚠ hbar: …".
 var knownRenderers = map[string]bool{
-	"text": true,
-	"hbar": true,
-	"vbar": true,
-	"bar":  true,
+	"text":   true,
+	"hbar":   true,
+	"vbar":   true,
+	"bar":    true,
+	"banner": true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -155,8 +156,9 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 		return CodeUnknownRenderer, "⚠ unknown renderer: " + b.Renderer, true
 	}
 
-	if b.Renderer == "text" {
-		// text accepts anything.
+	if b.Renderer == "text" || b.Renderer == "banner" {
+		// text and banner accept anything (banner silently ignores any
+		// DataRef children in v1 — see PLAN.md risk #5).
 		return "", "", false
 	}
 
