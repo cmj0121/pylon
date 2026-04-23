@@ -6,13 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// TestRenderBanner walks src/go/pkg/pylon/testdata_banner for matched
-// .pylon / .ascii pairs and asserts byte-exact banner output. The
-// fixture dir sits OUTSIDE testdata/ because banner is Go-only in v1
-// and shipping fixtures there would trip the JS-parity gate.
-func TestRenderBanner(t *testing.T) {
-	runFixtureDir(t, "testdata_banner")
-}
+// Banner fixtures now live in testdata/ alongside every other fixture
+// and are walked by TestRenderASCII / the parity gate. This file only
+// holds the font-table invariants.
 
 // TestBannerFontTables guards against font-table typos. Hand-written
 // ASCII art is easy to mis-space and a single short row corrupts
