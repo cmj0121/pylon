@@ -157,8 +157,8 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 	}
 
 	if b.Renderer == "text" || b.Renderer == "banner" {
-		// text and banner accept anything (banner silently ignores any
-		// DataRef children in v1 — see PLAN.md risk #5).
+		// Both accept any body; banner silently ignores DataRef children
+		// in v1.
 		return "", "", false
 	}
 

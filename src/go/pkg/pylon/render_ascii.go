@@ -7,14 +7,10 @@ import (
 
 // Box-drawing glyph palette. The JS side supports a few themes; this
 // commit ships `simple` (default Unicode) and `ascii` fallbacks.
-// theme carries the raw frontmatter theme string so downstream
-// renderers (banner) can pick alternative glyph tables without a
-// second plumbing parameter.
 type boxChars struct {
 	tl, tr, bl, br string
 	h, v           string
 	arrowL, arrowR string
-	theme          string
 }
 
 var unicodeBox = boxChars{
@@ -30,12 +26,10 @@ var asciiBox = boxChars{
 }
 
 func boxCharsFor(ast *Box) boxChars {
-	bc := unicodeBox
 	if ast.Meta.Theme == "ascii" {
-		bc = asciiBox
+		return asciiBox
 	}
-	bc.theme = ast.Meta.Theme
-	return bc
+	return unicodeBox
 }
 
 // RenderASCII turns an AST into a newline-joined ASCII block (no

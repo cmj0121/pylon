@@ -8,16 +8,11 @@ import "strings"
 const bannerRows = 6
 
 // renderBanner turns a box's literal text content into block letters.
-// Theme pick is driven by bc.theme (set upstream in boxCharsFor) so
-// the caller keeps its one-arg signature. DataRef children are
-// silently dropped in v1 — see PLAN.md for the parity-drift note.
-//
-// Input is every *Text's Content, including those nested inside the
-// box's Rows. The result is uppercased; unknown runes fall back to
-// the '?' glyph rather than aborting so fixtures stay deterministic.
+// Input is uppercased before lookup; unknown runes fall back to the
+// '?' glyph so fixtures stay deterministic.
 func renderBanner(b *Box, bc boxChars) []string {
 	font := bannerFontDefault
-	if bc.theme == "ascii" {
+	if bc == asciiBox {
 		font = bannerFontASCII
 	}
 
@@ -48,9 +43,8 @@ func renderBanner(b *Box, bc boxChars) []string {
 }
 
 // collectBannerText concatenates the Content of every *Text reachable
-// from b via its Items or nested Rows. Refs, DataRefs, nested Boxes,
-// and Edges are ignored in v1 — the banner primitive is literal-
-// string only.
+// through b's Items and direct Row children. v1 is literal-string
+// only; Refs, DataRefs, nested Boxes, and Edges are ignored.
 func collectBannerText(b *Box, sb *strings.Builder) {
 	for _, it := range b.Items {
 		switch x := it.(type) {
