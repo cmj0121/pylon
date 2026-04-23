@@ -102,7 +102,8 @@ var (
 
 // parseYamlScalar returns the scalar value and a success flag. Numbers
 // become float64; quoted strings become the inner value (no escape
-// expansion); unquoted runs stay as trimmed literals.
+// expansion); `[n, n, ...]` flow arrays become []float64 (heatmap's
+// row shape); unquoted runs stay as trimmed literals.
 func parseYamlScalar(raw string) (interface{}, bool) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -115,6 +116,9 @@ func parseYamlScalar(raw string) (interface{}, bool) {
 		}
 		return f, true
 	}
+	if len(s) >= 2 && s[0] == '[' && s[len(s)-1] == ']' {
+		return parseFlowNumberArray(s[1 : len(s)-1])
+	}
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		inner := s[1 : len(s)-1]
 		if strings.Contains(inner, "\"") || strings.Contains(inner, "\\") {
@@ -123,6 +127,31 @@ func parseYamlScalar(raw string) (interface{}, bool) {
 		return inner, true
 	}
 	return s, true
+}
+
+// parseFlowNumberArray reads the comma-separated body of a flow
+// array (`[1, 2, 3]` → "1, 2, 3"). Only numbers are supported — the
+// heatmap shape is the sole v1 consumer. Empty brackets `[]` parse
+// to an empty []float64.
+func parseFlowNumberArray(body string) ([]float64, bool) {
+	s := strings.TrimSpace(body)
+	if s == "" {
+		return []float64{}, true
+	}
+	parts := strings.Split(s, ",")
+	out := make([]float64, 0, len(parts))
+	for _, p := range parts {
+		tok := strings.TrimSpace(p)
+		if !yamlNumberRe.MatchString(tok) {
+			return nil, false
+		}
+		f, err := strconv.ParseFloat(tok, 64)
+		if err != nil {
+			return nil, false
+		}
+		out = append(out, f)
+	}
+	return out, true
 }
 
 // parseDataSection splits into flat-list vs named-series based on the

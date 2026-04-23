@@ -1,0 +1,9 @@
+---
+data:
+  grid:
+    - x: a
+      y: [0, 0, 0]
+    - x: b
+      y: [0, 0, 0]
+---
+[ @grid | heatmap ]

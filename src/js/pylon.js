@@ -41,10 +41,27 @@
   // YAML reserved words (true/false/null/~/yes/no) are kept as literal
   // strings -- we stay subset-strict rather than interpret booleans.
   const YAML_NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
+  // parseFlowNumberArray reads the body of a `[n, n, ...]` flow
+  // array. Numbers only — heatmap's y-row is the sole v1 consumer.
+  const parseFlowNumberArray = (body) => {
+    const s = body.trim();
+    if (s === "") return { ok: true, value: [] };
+    const parts = s.split(",");
+    const out = [];
+    for (const p of parts) {
+      const tok = p.trim();
+      if (!YAML_NUMBER_RE.test(tok)) return { ok: false };
+      out.push(parseFloat(tok));
+    }
+    return { ok: true, value: out };
+  };
   const parseYamlScalar = (raw) => {
     const s = raw.trim();
     if (s === "") return { ok: false };
     if (YAML_NUMBER_RE.test(s)) return { ok: true, value: parseFloat(s) };
+    if (s.length >= 2 && s[0] === "[" && s[s.length - 1] === "]") {
+      return parseFlowNumberArray(s.slice(1, -1));
+    }
     if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
       const inner = s.slice(1, -1);
       // Reject anything with control chars or embedded quotes; we do
@@ -1246,6 +1263,69 @@
     );
   };
 
+  // Heatmap ramps. Five levels -- blank plus four fills. Constants
+  // mirror src/go/pkg/pylon/render_heatmap.go so the two sides stay
+  // byte-identical. ASCII theme swaps to printable-only glyphs so
+  // terminals without box-drawing glyphs still produce a monotone
+  // ramp.
+  const HEATMAP_GLYPHS_DEFAULT = [" ", "░", "▒", "▓", "█"];
+  const HEATMAP_GLYPHS_ASCII = [" ", ".", "+", "*", "#"];
+
+  const heatmapGlyphs = (bc) =>
+    bc === ASCII_BOX ? HEATMAP_GLYPHS_ASCII : HEATMAP_GLYPHS_DEFAULT;
+
+  // validateHeatmapSeries checks the resolved series against the
+  // `[{x, y:[n,...]}]` shape. Returns an inline-error row array on
+  // failure or `null` on success. Ragged widths and non-numeric y
+  // entries collapse to the shape class; empty / negative-y carry
+  // the bar-family wire text (`empty series` / `negative y`) so
+  // users see the same phrasing across renderers.
+  const validateHeatmapSeries = (refValue) => {
+    const shape = () => [`⚠ heatmap: expected [{x, y:[n,...]}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ heatmap: empty series`];
+    let width = -1;
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") return shape();
+      if (!("x" in entry) || !("y" in entry)) return shape();
+      if (!Array.isArray(entry.y)) return shape();
+      if (width === -1) width = entry.y.length;
+      else if (entry.y.length !== width) return shape();
+      for (const v of entry.y) {
+        if (typeof v !== "number" || Number.isNaN(v)) return shape();
+        if (v < 0) return [`⚠ heatmap: negative y`];
+      }
+    }
+    return null;
+  };
+
+  // renderHeatmap lays out `{label} {grid}` rows (no separators
+  // between cells). Drops the label column when every label is the
+  // empty string. maxV normalises across every row and column; a
+  // zero-max matrix collapses to the blank glyph.
+  const renderHeatmap = (series, bc) => {
+    const glyphs = heatmapGlyphs(bc);
+    const labels = series.map((e) => String(e.x));
+    const hasLabel = labels.some((l) => l !== "");
+    const labelW = hasLabel
+      ? labels.reduce((w, s) => Math.max(w, displayWidth(s)), 0)
+      : 0;
+    let maxV = 0;
+    for (const e of series) {
+      for (const v of e.y) if (v > maxV) maxV = v;
+    }
+    return series.map((e, i) => {
+      let grid = "";
+      for (const v of e.y) {
+        const idx = maxV > 0 ? Math.round((v / maxV) * 4) : 0;
+        grid += glyphs[idx];
+      }
+      return hasLabel
+        ? `${padRow(labels[i], labelW, "right", 0)} ${grid}`
+        : grid;
+    });
+  };
+
   // parseProgressScalar reads the concatenated text of a renderer
   // body as a finite number. Returns null when the body is empty,
   // all-whitespace, or carries any non-numeric character -- the
@@ -1601,6 +1681,16 @@
       const [filled, empty] = progressGlyphs(bc);
       return [renderProgressRow(input, filled, empty)];
     },
+
+    // Heatmap. Series-only: `[{x, y:[n,...]}]`. The shape validator
+    // fires ahead of the renderer so bad input shortcuts to a single
+    // inline warning row; a clean series flows straight to the grid
+    // layout.
+    heatmap(refValue, bc) {
+      const err = validateHeatmapSeries(refValue);
+      if (err) return err;
+      return renderHeatmap(refValue, bc);
+    },
   };
 
   // Inspect a renderer-tagged box and rewrite its items to either the
@@ -1660,6 +1750,14 @@
       // diagnostics read `⚠ progress: ...` with matching wire text.
       if (name === "progress") {
         const err = validateBarSeries(refValue, "progress");
+        if (err) return inlineError(err[0]);
+        const rendered = handler(refValue, bc);
+        return rendered.map((r) => ({ type: "text", content: r }));
+      }
+      // Heatmap carries its own shape (`[{x, y:[n,...]}]`); the bar-
+      // family validator would misread the array-valued y.
+      if (name === "heatmap") {
+        const err = validateHeatmapSeries(refValue);
         if (err) return inlineError(err[0]);
         const rendered = handler(refValue, bc);
         return rendered.map((r) => ({ type: "text", content: r }));

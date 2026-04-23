@@ -87,6 +87,7 @@ var knownRenderers = map[string]bool{
 	"bar":      true,
 	"banner":   true,
 	"progress": true,
+	"heatmap":  true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -184,6 +185,13 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 		return CodeDataNotFound, "⚠ @" + ref.Name + " not found", true
 	}
 
+	// heatmap has its own shape (`[{x, y:[n,...]}]`); the bar-family
+	// validator would misread it. Empty / negative-y classes still
+	// share codes with the bar family so the two renderers stay in
+	// sync on those diagnostics.
+	if b.Renderer == "heatmap" {
+		return validateHeatmapSeries(series)
+	}
 	return barSeriesInlineError(b.Renderer, series)
 }
 
@@ -250,7 +258,7 @@ func rendererInlineErrorSpan(b *Box, code Code) Span {
 // bar-data errors) while still visiting each Box only once.
 func isBarSeriesCode(code Code) bool {
 	switch code {
-	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX:
+	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX, CodeHeatmapShape:
 		return true
 	}
 	return false
