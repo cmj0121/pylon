@@ -67,7 +67,10 @@ Unicode box-drawing glyphs for plain `+ - | < >`.
 
 The `data:` parser is a narrow YAML subset, not full YAML.
 
-- **Block style only.** Flow style (`[...]`, `{...}`) is rejected.
+- **Block style only.** Flow style (`[...]`, `{...}`) is rejected,
+  except `y:` may take a flow-style numeric array (`y: [1, 2, 3]`)
+  to fit 2D shapes like `heatmap`. Flow maps and non-numeric flow
+  arrays stay rejected.
 - **Spaces-only indent.** A tab anywhere inside the frontmatter
   rejects the whole block via toast.
 - **Scalars.** Numbers, double-quoted strings, or unquoted strings
@@ -274,16 +277,17 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships five renderers. Unknown names surface an inline
+Pylon 0.2.0 ships six renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
-| Renderer       | Input                      | Output                                                          |
-| -------------- | -------------------------- | --------------------------------------------------------------- |
-| `text`         | string or `@ref`           | Pass-through; `@ref` emitted via `JSON.stringify`.              |
-| `hbar` (`bar`) | `@ref` → `[{x,y}]`         | Horizontal bars scaled against `max(y)` with `(value)` labels.  |
-| `vbar`         | `@ref` → `[{x,y}]`         | Vertical bars scaled against `max(y)`; `x`/`(value)` as feet.   |
-| `banner`       | literal string             | 6-row block-letter banner of the uppercased source text.        |
-| `progress`     | scalar or `@ref`→`[{x,y}]` | Progress bar(s) with a right-aligned `%` label; 20-cell budget. |
+| Renderer       | Input                       | Output                                                          |
+| -------------- | --------------------------- | --------------------------------------------------------------- |
+| `text`         | string or `@ref`            | Pass-through; `@ref` emitted via `JSON.stringify`.              |
+| `hbar` (`bar`) | `@ref` → `[{x,y}]`          | Horizontal bars scaled against `max(y)` with `(value)` labels.  |
+| `vbar`         | `@ref` → `[{x,y}]`          | Vertical bars scaled against `max(y)`; `x`/`(value)` as feet.   |
+| `banner`       | literal string              | 6-row block-letter banner of the uppercased source text.        |
+| `progress`     | scalar or `@ref`→`[{x,y}]`  | Progress bar(s) with a right-aligned `%` label; 20-cell budget. |
+| `heatmap`      | `@ref` → `[{x, y:[n,...]}]` | 2D matrix of ramp glyphs (`░▒▓█` / `.+*#`).                     |
 
 `bar` is a v0.1 alias for `hbar`; both render identically.
 
@@ -447,6 +451,49 @@ malformed series reports `progress: expected [{x,y}]`, `progress:
 empty series`, or `progress: duplicate x "…"` (negative `y` is
 caught as `progress: negative y` — out-of-range in the other
 direction is clamped rather than flagged).
+
+### heatmap
+
+```pylon
+---
+data:
+  activity:
+    - x: Mon
+      y: [1, 2, 4, 6, 8]
+    - x: Tue
+      y: [0, 3, 5, 7, 4]
+    - x: Wed
+      y: [2, 5, 8, 5, 2]
+    - x: Thu
+      y: [0, 1, 3, 2, 0]
+---
+[ @activity | heatmap ]
+```
+
+```txt
+┌───────────────┐
+│   Mon ░░▒▓█   │
+│   Tue  ▒▓█▒   │
+│   Wed ░▓█▓░   │
+│   Thu  ░▒░    │
+└───────────────┘
+```
+
+`heatmap` accepts an `@ref` pointing to `[{x, y:[n,...]}]` — a
+labeled 2D matrix where every row's `y` array has the same length.
+Each cell is one glyph on a 5-level ramp; there is no separator
+between cells. The ramp is `░▒▓█` by default and `.+*#` under
+`theme: ascii`. A right-aligned label column appears when any row's
+`x` is non-empty; all-empty labels suppress the column entirely.
+Values normalize against the whole matrix: `idx = round(v /
+max(all values) * 4)`, so an all-zero input renders as all blanks
+rather than an error.
+
+Shape problems (missing `y`, ragged rows, non-numeric entries)
+surface `⚠ heatmap: expected [{x, y:[n,...]}]`. An empty series
+reports `heatmap: empty series`, and any negative value reports
+`heatmap: negative y` — the bar-family validators apply with the
+`heatmap:` prefix.
 
 ## Error model
 

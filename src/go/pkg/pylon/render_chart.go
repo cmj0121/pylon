@@ -62,6 +62,8 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 			return renderProgressSeries(chartSeries(b, data), bc)
 		}
 		return renderProgressScalar(b, bc)
+	case "heatmap":
+		return renderHeatmap(chartSeries(b, data), bc)
 	}
 	return nil
 }

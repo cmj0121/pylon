@@ -18,6 +18,7 @@ or by copying the source into a `<pylon-chart>` element.
 | [chart-vbar.pylon](chart-vbar.pylon)       | Vertical bar chart from `data:` frontmatter         |
 | [banner.pylon](banner.pylon)               | Block-letter banner of a literal string             |
 | [progress.pylon](progress.pylon)           | Progress bars with `%` labels from a `@ref` series  |
+| [heatmap.pylon](heatmap.pylon)             | 2D matrix of ramp glyphs from a `@ref` series       |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
 
 ## hello.pylon
@@ -224,6 +225,33 @@ data:
 │   tests ████████████░░░░░░░░  60%   │
 │    docs ████████░░░░░░░░░░░░  40%   │
 └─────────────────────────────────────┘
+```
+
+## heatmap.pylon
+
+```pylon
+---
+data:
+  activity:
+    - x: Mon
+      y: [1, 2, 4, 6, 8]
+    - x: Tue
+      y: [0, 3, 5, 7, 4]
+    - x: Wed
+      y: [2, 5, 8, 5, 2]
+    - x: Thu
+      y: [0, 1, 3, 2, 0]
+---
+[ @activity | heatmap ]
+```
+
+```txt
+┌───────────────┐
+│   Mon ░░▒▓█   │
+│   Tue  ▒▓█▒   │
+│   Wed ░▓█▓░   │
+│   Thu  ░▒░    │
+└───────────────┘
 ```
 
 ## theme-ascii.pylon
