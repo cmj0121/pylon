@@ -48,6 +48,17 @@ func RenderRows(ast *Box) []string {
 		targetW = &w
 		targetH = &h
 	}
+	// Propagate the root's ColorEnabled flag to every nested box so
+	// chart primitives buried inside a multi-item source (e.g.
+	// `examples/showcase.pylon`) can read it from their own
+	// `b.Meta.ColorEnabled` without having to walk back up to the
+	// root. Only ColorEnabled is propagated — size/theme/data stay
+	// root-only because they're intentionally scoped.
+	if ast.Meta.ColorEnabled {
+		walkBoxes(ast, func(b *Box) {
+			b.Meta.ColorEnabled = true
+		})
+	}
 	data := ast.Meta.Data
 	rows := renderBoxRows(ast, bc, targetW, targetH, data)
 	return overlayCrossRowGutter(rows, ast, bc, data)

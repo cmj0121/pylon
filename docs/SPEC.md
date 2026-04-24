@@ -935,20 +935,26 @@ helps. The JS / browser renderer has no ANSI path.
 `--color=auto|always|never` controls whether escape sequences are
 emitted. Default is `auto`.
 
-| Condition                                  | Color on? |
-| ------------------------------------------ | --------- |
-| `--color=never`                            | no        |
-| `--color=always`                           | yes       |
-| `--color=auto` + `NO_COLOR` set            | no        |
-| `--color=auto` + `COLORTERM` not truecolor | no        |
-| `--color=auto` + stdout not a TTY          | no        |
-| `--color=auto` + all three checks pass     | yes       |
+| Condition                                     | Color on? |
+| --------------------------------------------- | --------- |
+| `--color=never`                               | no        |
+| `--color=always`                              | yes       |
+| `--color=auto` + `NO_COLOR` set               | no        |
+| `--color=auto` + `COLORTERM=truecolor\|24bit` | yes       |
+| `--color=auto` + stdout is a TTY              | yes       |
+| otherwise under `auto`                        | no        |
 
 `NO_COLOR=1` wins whenever mode is `auto`, per
-<https://no-color.org/>. `COLORTERM` must be `truecolor` or `24bit` to
-qualify. On Windows, `auto` falls back to off because stdlib TTY
-detection is flaky there; pass `--color=always` explicitly to force
-color on Windows terminals that do support it.
+<https://no-color.org/>. `COLORTERM=truecolor` (or `24bit`) is a
+positive signal that short-circuits the TTY check — it covers
+`nohup` / tmux-outer-pipe cases where isatty would be false but
+the user clearly wants color. Otherwise the TTY check is enough:
+most modern terminals (iTerm, Alacritty, Kitty, Terminal.app,
+Windows Terminal, GNOME Terminal) parse 24-bit SGR cleanly whether
+or not they advertise `COLORTERM`. On Windows, `auto` falls back to
+off because stdlib TTY detection is flaky there; pass
+`--color=always` explicitly to force color on Windows terminals
+that do support it.
 
 `theme: ascii` suppresses color unconditionally, even under
 `--color=always`. ASCII theme is the plain-text opt-out; choosing it

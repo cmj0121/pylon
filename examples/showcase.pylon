@@ -109,6 +109,7 @@ data:
 [ @signups | step ]
 [ @sprint | gantt ]
 [ 75 | progress ]
+[ foo | mystery ]
 [- @sales | text -]
 [ Start ] -> [ Process ] -> [ End ]
 [- a :: x -] -> [ b ] -> &x

@@ -161,12 +161,21 @@ func writeOutputBytes(path string, payload []byte) error {
 
 // resolveColor converts the `--color=auto|always|never` flag into the
 // boolean that ends up on Meta.ColorEnabled. Auto-mode is
-// intentionally conservative — it only returns true when:
+// permissive-but-safe — it returns true on any interactive terminal
+// that hasn't explicitly opted out:
 //   - NO_COLOR is unset (https://no-color.org),
-//   - COLORTERM is set to `truecolor` or `24bit` (terminals that
-//     declare 24-bit support — otherwise our SGR bytes show up as
-//     literal garbage in terminals that don't parse them),
-//   - stdout is a character device (pipes / files get no colour).
+//   - stdout is a character device (pipes / files get no colour so
+//     redirected output stays plain).
+//
+// `COLORTERM=truecolor|24bit` is checked as a positive signal — if
+// the env var is set to one of those values we short-circuit the
+// TTY test. This covers nohup / tmux-outer-pipe cases where the
+// isatty check would fail but the user clearly wants color. It is
+// NOT required: most modern terminals (iTerm, Alacritty, Kitty,
+// macOS Terminal, Windows Terminal, GNOME Terminal) handle 24-bit
+// SGR cleanly whether or not they advertise COLORTERM. Forcing the
+// env var requirement would mean shipping a "colorless by default"
+// experience for the majority of users, which defeats the point.
 //
 // `always` and `never` force the flag regardless of environment so
 // CI and scripted callers have a deterministic switch.
@@ -180,9 +189,8 @@ func resolveColor(mode string) bool {
 		if os.Getenv("NO_COLOR") != "" {
 			return false
 		}
-		ct := os.Getenv("COLORTERM")
-		if ct != "truecolor" && ct != "24bit" {
-			return false
+		if ct := os.Getenv("COLORTERM"); ct == "truecolor" || ct == "24bit" {
+			return true
 		}
 		stat, err := os.Stdout.Stat()
 		if err != nil {
