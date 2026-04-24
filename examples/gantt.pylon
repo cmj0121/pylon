@@ -1,0 +1,17 @@
+---
+data:
+  sprint:
+    - x: spec
+      start: 0
+      end: 5
+    - x: code
+      start: 3
+      end: 12
+    - x: test
+      start: 10
+      end: 16
+    - x: ship
+      start: 14
+      end: 20
+---
+[ @sprint | gantt ]

@@ -121,7 +121,7 @@ catalogue, and error model.
 
 ## Learn more
 
-- [`examples/`](examples/) — fourteen standalone sample files, one
+- [`examples/`](examples/) — eighteen standalone sample files, one
   per feature.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.
 - [`docs/LSP.md`](docs/LSP.md) — Language Server reference (install,

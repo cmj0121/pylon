@@ -68,6 +68,15 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		return renderSparkline(chartSeries(b, data), bc)
 	case "candlestick":
 		return renderCandlestick(chartSeries(b, data), bc)
+	case "hist":
+		return renderHist(chartSeries(b, data), bc)
+	case "step":
+		return renderStep(chartSeries(b, data), bc)
+	case "gantt":
+		// gantt needs meta.Size for its size-aware budget; b.Meta is
+		// only non-zero on the root, so nested boxes fall through with
+		// Size=nil (default 20-cell budget).
+		return renderGantt(chartSeries(b, data), bc, Meta{Data: data, Size: b.Meta.Size})
 	}
 	return nil
 }

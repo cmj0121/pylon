@@ -21,6 +21,9 @@ or by copying the source into a `<pylon-chart>` element.
 | [heatmap.pylon](heatmap.pylon)             | 2D matrix of ramp glyphs from a `@ref` series       |
 | [sparkline.pylon](sparkline.pylon)         | Inline trend row of ramp glyphs from a `@ref`       |
 | [candlestick.pylon](candlestick.pylon)     | OHLC candles with bull/bear/doji bodies and wicks   |
+| [hist.pylon](hist.pylon)                   | Gap-less 8-row histogram of pre-binned counts       |
+| [step.pylon](step.pylon)                   | 5-row cumulative step line with corner connectors   |
+| [gantt.pylon](gantt.pylon)                 | Task bars over a shared horizontal budget           |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
 
 ## hello.pylon
@@ -349,6 +352,101 @@ data:
 │   │                 │     │
 │   MonTueWedThuFriSatSun   │
 └───────────────────────────┘
+```
+
+## hist.pylon
+
+```pylon
+---
+data:
+  letters:
+    - x: M
+      y: 1
+    - x: I
+      y: 4
+    - x: S
+      y: 4
+    - x: P
+      y: 2
+---
+[ @letters | hist ]
+```
+
+```txt
+┌──────────┐
+│    ██    │
+│    ██    │
+│    ██    │
+│    ██    │
+│    ███   │
+│    ███   │
+│   ████   │
+│   ████   │
+│   MISP   │
+└──────────┘
+```
+
+## step.pylon
+
+```pylon
+---
+data:
+  signups:
+    - x: w1
+      y: 5
+    - x: w2
+      y: 12
+    - x: w3
+      y: 14
+    - x: w4
+      y: 25
+    - x: w5
+      y: 40
+    - x: w6
+      y: 55
+---
+[ @signups | step ]
+```
+
+```txt
+┌─────────────────┐
+│            ┌─   │
+│          ┌─┘    │
+│        ┌─┘      │
+│    ┌───┘        │
+│   ─┘            │
+└─────────────────┘
+```
+
+## gantt.pylon
+
+```pylon
+---
+data:
+  sprint:
+    - x: spec
+      start: 0
+      end: 5
+    - x: code
+      start: 3
+      end: 12
+    - x: test
+      start: 10
+      end: 16
+    - x: ship
+      start: 14
+      end: 20
+---
+[ @sprint | gantt ]
+```
+
+```txt
+┌───────────────────────────────┐
+│   spec █████                  │
+│   code    █████████           │
+│   test           ██████       │
+│   ship               ██████   │
+└───────────────────────────────┘
 ```
 
 ## theme-ascii.pylon

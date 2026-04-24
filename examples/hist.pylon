@@ -1,0 +1,13 @@
+---
+data:
+  letters:
+    - x: M
+      y: 1
+    - x: I
+      y: 4
+    - x: S
+      y: 4
+    - x: P
+      y: 2
+---
+[ @letters | hist ]

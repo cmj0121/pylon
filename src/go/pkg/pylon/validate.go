@@ -90,6 +90,9 @@ var knownRenderers = map[string]bool{
 	"heatmap":     true,
 	"sparkline":   true,
 	"candlestick": true,
+	"hist":        true,
+	"step":        true,
+	"gantt":       true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -206,7 +209,68 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 	if b.Renderer == "candlestick" {
 		return validateCandlestickSeries(series)
 	}
+	// step follows the sparkline tolerance profile (negative y and
+	// duplicate x both fine — only shape / empty matter).
+	if b.Renderer == "step" {
+		return validateStepSeries(series)
+	}
+	// gantt has its own shape (`[{x, start, end}]`) + range checks.
+	if b.Renderer == "gantt" {
+		return validateGanttSeries(series)
+	}
+	// hist flows through the bar-family validator but treats empty-x
+	// entries as "no label" rather than a label literal, so empty-x
+	// duplicates are tolerated (compact mode stacks bars with no
+	// footer).
+	if b.Renderer == "hist" {
+		return histSeriesInlineError(series)
+	}
 	return barSeriesInlineError(b.Renderer, series)
+}
+
+// histSeriesInlineError mirrors barSeriesInlineError except that
+// empty-x entries don't feed the duplicate-x set — an empty x is
+// "no label for this column", not a label whose literal is the empty
+// string. Shape / empty / negative-y / non-empty-duplicate-x still
+// fire with the "hist:" prefix.
+func histSeriesInlineError(series interface{}) (Code, string, bool) {
+	emit := func(code Code, reason string) (Code, string, bool) {
+		return code, "⚠ hist: " + reason, true
+	}
+	arr, ok := series.([]map[string]interface{})
+	if !ok {
+		return emit(CodeBarShape, "expected [{x,y}]")
+	}
+	if len(arr) == 0 {
+		return emit(CodeBarEmpty, "empty series")
+	}
+	seen := map[string]bool{}
+	for _, entry := range arr {
+		if entry == nil {
+			return emit(CodeBarShape, "expected [{x,y}]")
+		}
+		_, hasX := entry["x"]
+		yRaw, hasY := entry["y"]
+		if !hasX || !hasY {
+			return emit(CodeBarShape, "expected [{x,y}]")
+		}
+		yNum, isNum := yRaw.(float64)
+		if !isNum || math.IsNaN(yNum) {
+			return emit(CodeBarShape, "expected [{x,y}]")
+		}
+		if yNum < 0 {
+			return emit(CodeBarNegativeY, "negative y")
+		}
+		xKey := fmt.Sprintf("%v", entry["x"])
+		if xKey == "" {
+			continue
+		}
+		if seen[xKey] {
+			return emit(CodeBarDuplicateX, `duplicate x "`+xKey+`"`)
+		}
+		seen[xKey] = true
+	}
+	return "", "", false
 }
 
 // barSeriesInlineError validates a resolved series against the
@@ -272,7 +336,7 @@ func rendererInlineErrorSpan(b *Box, code Code) Span {
 // bar-data errors) while still visiting each Box only once.
 func isBarSeriesCode(code Code) bool {
 	switch code {
-	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX, CodeHeatmapShape, CodeCandlestickOHLC:
+	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX, CodeHeatmapShape, CodeCandlestickOHLC, CodeGanttRange:
 		return true
 	}
 	return false

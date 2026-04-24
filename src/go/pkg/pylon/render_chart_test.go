@@ -510,6 +510,195 @@ func TestRenderCandlestick_ASCII(t *testing.T) {
 	}
 }
 
+// TestRenderHist_Basic locks a small histogram fixture. Column width
+// is driven by the footer (single-char labels → colW=1) and the
+// block glyph fills each column from the bottom up.
+func TestRenderHist_Basic(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  h:",
+		"    - x: a",
+		"      y: 1",
+		"    - x: b",
+		"      y: 3",
+		"    - x: c",
+		"      y: 5",
+		"---",
+		"[ @h | hist ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	want := strings.Join([]string{
+		"┌─────────┐",
+		"│     █   │",
+		"│     █   │",
+		"│     █   │",
+		"│    ██   │",
+		"│    ██   │",
+		"│    ██   │",
+		"│   ███   │",
+		"│   ███   │",
+		"│   abc   │",
+		"└─────────┘",
+	}, "\n")
+	if got != want {
+		t.Errorf("hist basic mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
+	}
+}
+
+// TestRenderStep_WorkedExample locks the exact 5x5 grid pinned in
+// the contract: series y=[3,5,2] at H=5 normalises to rows [3,0,4],
+// which draws the up-then-down staircase byte-for-byte below.
+func TestRenderStep_WorkedExample(t *testing.T) {
+	got := renderStep([]map[string]interface{}{
+		{"x": 1.0, "y": 3.0},
+		{"x": 2.0, "y": 5.0},
+		{"x": 3.0, "y": 2.0},
+	}, unicodeBox)
+	want := []string{
+		" ┌─┐ ",
+		" │ │ ",
+		" │ │ ",
+		"─┘ │ ",
+		"   └─",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("row count = %d, want %d; rows = %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestRenderStep_Flat asserts all-equal y collapses every entry to
+// row H-1 (bottom), rendering as a single full-width horizontal line.
+func TestRenderStep_Flat(t *testing.T) {
+	got := renderStep([]map[string]interface{}{
+		{"x": 1.0, "y": 5.0},
+		{"x": 2.0, "y": 5.0},
+		{"x": 3.0, "y": 5.0},
+	}, unicodeBox)
+	// Width = 2n-1 = 5 cells; only bottom row non-blank.
+	want := []string{
+		"     ",
+		"     ",
+		"     ",
+		"     ",
+		"─────",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("row count = %d, want %d; rows = %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestRenderGantt_Basic locks a small task series byte-for-byte.
+// Budget 20, three tasks on maxEnd=10: the bar spans are 0-7, 4-15,
+// 12-19 per the round(start/maxEnd*budget) / round(end/maxEnd*budget)
+// -1 rule.
+func TestRenderGantt_Basic(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  tasks:",
+		"    - x: spec",
+		"      start: 0",
+		"      end: 4",
+		"    - x: build",
+		"      start: 2",
+		"      end: 8",
+		"    - x: test",
+		"      start: 6",
+		"      end: 10",
+		"---",
+		"[ @tasks | gantt ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	want := strings.Join([]string{
+		"┌────────────────────────────────┐",
+		"│    spec ████████               │",
+		"│   build     ████████████       │",
+		"│    test             ████████   │",
+		"└────────────────────────────────┘",
+	}, "\n")
+	if got != want {
+		t.Errorf("gantt basic mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
+	}
+}
+
+// TestRenderGantt_Size exercises the size-aware budget: with
+// `size: 40x6` and a 5-char widest label, budget = 40-5-4 = 31 (well
+// above the 5-cell floor), so bars stretch further than the default
+// 20-cell path.
+func TestRenderGantt_Size(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"size: 40x6",
+		"data:",
+		"  tasks:",
+		"    - x: spec",
+		"      start: 0",
+		"      end: 4",
+		"    - x: build",
+		"      start: 2",
+		"      end: 8",
+		"    - x: test",
+		"      start: 6",
+		"      end: 10",
+		"---",
+		"[ @tasks | gantt ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	// spec = round(4/10*31) = 12 cells; build = 24-6 = 19 cells;
+	// test = 31-19 = 12 cells.
+	if !strings.Contains(got, strings.Repeat(barGlyph, 19)) {
+		t.Errorf("expected a 19-cell run (build task) under size:40x6; got:\n%s", got)
+	}
+	if strings.Contains(got, strings.Repeat(barGlyph, 20)) {
+		t.Errorf("didn't expect a 20-cell run under size:40x6 (would mean default budget still applied):\n%s", got)
+	}
+}
+
+// TestRenderGantt_SizeFloor pins the 5-cell minimum budget.
+// With labels up to 6 chars ("deploy") and `size: 15x6`, the math
+// gives max(5, 15 - 6 - 4) = 5 — the floor binds exactly while the
+// outer box stays wide enough to hold 3 left-pad + 6 label + 1 gap
+// + 5 bar cells. A narrower size would let the outer box clip the
+// bar area regardless of what gantt computes; the floor is a
+// gantt-side guarantee, not a layout guarantee.
+func TestRenderGantt_SizeFloor(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"size: 15x6",
+		"data:",
+		"  tasks:",
+		"    - x: design",
+		"      start: 0",
+		"      end: 10",
+		"    - x: deploy",
+		"      start: 3",
+		"      end: 10",
+		"---",
+		"[ @tasks | gantt ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	// Floor at 5 cells; design's 0..10 spans the entire maxEnd so it
+	// occupies all 5 cells — a run of 5 block glyphs must appear.
+	if !strings.Contains(got, strings.Repeat(barGlyph, 5)) {
+		t.Errorf("expected at least one 5-cell run under size:15x6 floor; got:\n%s", got)
+	}
+	// Reject the default 20-cell budget slipping through.
+	if strings.Contains(got, strings.Repeat(barGlyph, 20)) {
+		t.Errorf("didn't expect a 20-cell run (would mean default budget still applied):\n%s", got)
+	}
+}
+
 // TestRenderChart_DoesNotDisturbNormalBoxes is a regression guard:
 // normal (non-chart) boxes must render exactly as they did before
 // the chart dispatch was added.

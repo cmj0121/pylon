@@ -1,0 +1,15 @@
+---
+theme: ascii
+data:
+  tasks:
+    - x: spec
+      start: 0
+      end: 4
+    - x: build
+      start: 2
+      end: 8
+    - x: test
+      start: 6
+      end: 10
+---
+[ @tasks | gantt ]
