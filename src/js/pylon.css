@@ -28,6 +28,16 @@ pylon-chart {
   --pylon-warn-paper: #8a2a1f;
   --pylon-warn-rule: #5d1e16;
 
+  /* semantic chart palette — mirrors the Go-side ANSI slots.
+   * Applied to `.pylon-bull` / `.pylon-bear` / `.pylon-doji` /
+   * `.pylon-warn` cells in the ASCII renderer and to matching rect
+   * / text fills in the SVG renderer. Override these in your own
+   * stylesheet to re-skin without touching pylon source. */
+  --pylon-bull: #40a040;
+  --pylon-bear: #c84040;
+  --pylon-doji: #c8aa20;
+  --pylon-warn: #c84040;
+
   /* typography
    *
    * Font priority:
@@ -436,6 +446,23 @@ pylon-chart:not([wysiwyg]) .pylon-view::after {
   display: inline-block;
   text-align: center;
   vertical-align: baseline;
+}
+
+/* Semantic color slots applied to individual ASCII cells. The chart
+   renderers wrap their body glyphs in these classes when the root
+   `color:` frontmatter (or the browser default) asks for color. */
+.pylon-ascii-cell.pylon-bull {
+  color: var(--pylon-bull);
+}
+.pylon-ascii-cell.pylon-bear {
+  color: var(--pylon-bear);
+}
+.pylon-ascii-cell.pylon-doji {
+  color: var(--pylon-doji);
+}
+.pylon-ascii-cell.pylon-warn {
+  color: var(--pylon-warn);
+  font-weight: bold;
 }
 
 .pylon-svg,

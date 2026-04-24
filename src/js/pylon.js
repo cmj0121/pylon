@@ -268,6 +268,13 @@
         if (s) meta.size = { w: parseInt(s[1], 10), h: parseInt(s[2], 10) };
       } else if (key === "theme") {
         meta.theme = raw;
+      } else if (key === "color") {
+        // Source-file preference for ANSI color in ASCII output.
+        // Accept exact `true` / `false`; other values leave the key
+        // effectively absent so the browser renderer falls through
+        // to default behaviour. Mirrors Go's parseFrontmatter.
+        if (raw === "true") meta.color = true;
+        else if (raw === "false") meta.color = false;
       }
       i++;
     }
@@ -1266,17 +1273,60 @@
       ? [PROGRESS_FILLED_ASCII, PROGRESS_EMPTY_ASCII]
       : [PROGRESS_FILLED_DEFAULT, PROGRESS_EMPTY_DEFAULT];
 
+  // Semantic color slots used by the chart renderers. Mirrors Go's
+  // semKind enum in render_ansi.go. Each slot maps to an ANSI SGR
+  // prefix that the ASCII DOM renderer and the SVG rect emitter
+  // recognise and translate into a CSS class / rect fill. Values are
+  // the wrapANSI output for colorOn=true.
+  const SEM_BULL = "bull";
+  const SEM_BEAR = "bear";
+  const SEM_DOJI = "doji";
+  const SEM_WARN = "warn";
+
+  const ANSI_PREFIX = {
+    [SEM_BULL]: "\x1b[38;2;64;160;64m",
+    [SEM_BEAR]: "\x1b[38;2;200;64;64m",
+    [SEM_DOJI]: "\x1b[38;2;200;170;32m",
+    [SEM_WARN]: "\x1b[1;38;2;200;64;64m",
+  };
+  const ANSI_RESET_FG = "\x1b[39m";
+  const ANSI_RESET_ALL = "\x1b[0m";
+
+  // wrapANSI returns glyph wrapped in the SGR sequence for kind when
+  // colorOn is truthy; otherwise returns glyph unchanged. semWarn uses
+  // a full reset (clears bold too); colored glyphs use fg-only reset
+  // so adjacent colored runs don't double-emit. Mirrors Go's wrapANSI.
+  const wrapANSI = (glyph, kind, colorOn) => {
+    if (!colorOn || !kind) return glyph;
+    const prefix = ANSI_PREFIX[kind];
+    if (!prefix) return glyph;
+    const reset = kind === SEM_WARN ? ANSI_RESET_ALL : ANSI_RESET_FG;
+    return prefix + glyph + reset;
+  };
+
+  // progressKind picks the semantic slot for a pct value. Same
+  // thresholds as Go: ≥80 bull, ≥40 doji, else bear.
+  const progressKind = (pct) =>
+    pct >= 80 ? SEM_BULL : pct >= 40 ? SEM_DOJI : SEM_BEAR;
+
   // renderProgressRow formats "{bar-20} {pct-4}": padStart(3)+"%"
   // right-aligns the percent so "100%" sits flush and " 75%"/"  0%"
-  // lead with spaces.
-  const renderProgressRow = (y, filled, empty) => {
+  // lead with spaces. Filled glyphs pick up the semantic color slot
+  // when colorOn is true; empty run stays plain so it reads as
+  // scaffolding.
+  const renderProgressRow = (y, filled, empty, colorOn) => {
     const pct = clampPercent(y);
     const cells = Math.round((pct / 100) * PROGRESS_BUDGET);
-    const bar = filled.repeat(cells) + empty.repeat(PROGRESS_BUDGET - cells);
+    const filledRun = wrapANSI(
+      filled.repeat(cells),
+      progressKind(pct),
+      colorOn && cells > 0,
+    );
+    const bar = filledRun + empty.repeat(PROGRESS_BUDGET - cells);
     return `${bar} ${String(Math.round(pct)).padStart(3, " ") + "%"}`;
   };
 
-  const renderProgressSeries = (series, bc) => {
+  const renderProgressSeries = (series, bc, colorOn) => {
     const [filled, empty] = progressGlyphs(bc);
     const labels = series.map((e) => String(e.x));
     const labelW = labels.reduce((w, s) => Math.max(w, displayWidth(s)), 0);
@@ -1286,6 +1336,7 @@
           e.y,
           filled,
           empty,
+          colorOn,
         )}`,
     );
   };
@@ -1466,7 +1517,9 @@
   // and uses one-cell columns; labelled mode pins the candle to the
   // left-most cell and centres the x label in a footer row whose width
   // matches max(displayWidth(x), 1).
-  const renderCandlestick = (series, bc) => {
+  const renderCandlestick = (series, bc, colorOn) => {
+    // ASCII theme is an explicit plain-text opt-out, force color off.
+    if (bc === ASCII_BOX) colorOn = false;
     const g = candlestickGlyphs(bc);
     const H = CANDLESTICK_HEIGHT_DEFAULT;
     const labels = series.map((e) => String(e.x));
@@ -1497,7 +1550,10 @@
       const rC = rowOf(e.c);
       const bodyTop = Math.min(rO, rC);
       const bodyBot = Math.max(rO, rC);
-      const body = e.c > e.o ? g.bull : e.c < e.o ? g.bear : g.doji;
+      const kind = e.c > e.o ? SEM_BULL : e.c < e.o ? SEM_BEAR : SEM_DOJI;
+      const rawBody =
+        kind === SEM_BULL ? g.bull : kind === SEM_BEAR ? g.bear : g.doji;
+      const body = wrapANSI(rawBody, kind, colorOn);
       return { rH, rL, bodyTop, bodyBot, body };
     });
 
@@ -2121,10 +2177,10 @@
     // (not `y:[...]`). The validator fires ahead of the renderer so
     // shape / empty / invalid-ohlc errors short-circuit to an inline
     // warning row; a clean series flows to the fixed-height body.
-    candlestick(refValue, bc) {
+    candlestick(refValue, bc, _budgetW, _size, colorOn) {
       const err = validateCandlestickSeries(refValue);
       if (err) return err;
-      return renderCandlestick(refValue, bc);
+      return renderCandlestick(refValue, bc, colorOn);
     },
 
     // Histogram. Shares the bar-family `[{x,y}]` shape so the
@@ -2161,11 +2217,12 @@
   // `dataMap` is the resolved frontmatter `meta.data` (flat list or
   // map of named series). `budgetW` is the content-width budget the
   // containing box is willing to devote to the renderer's visuals.
-  const applyChartRenderer = (box, dataMap, bc, budgetW, size) => {
+  const applyChartRenderer = (box, dataMap, bc, budgetW, size, colorOn) => {
     const name = box.renderer;
     const handler = chartRenderers[name];
     const items = box.items || [];
-    const inlineError = (msg) => [{ type: "text", content: msg }];
+    const warnWrap = (msg) => wrapANSI(msg, SEM_WARN, colorOn);
+    const inlineError = (msg) => [{ type: "text", content: warnWrap(msg) }];
 
     if (!handler) return inlineError(`\u26a0 unknown renderer: ${name}`);
 
@@ -2185,7 +2242,7 @@
       if (y === null) {
         return inlineError(`\u26a0 progress: expected number`);
       }
-      const rendered = handler(y, bc);
+      const rendered = handler(y, bc, colorOn);
       return rendered.map((r) => ({ type: "text", content: r }));
     }
 
@@ -2212,7 +2269,7 @@
       if (name === "progress") {
         const err = validateBarSeries(refValue, "progress");
         if (err) return inlineError(err[0]);
-        const rendered = handler(refValue, bc);
+        const rendered = handler(refValue, bc, colorOn);
         return rendered.map((r) => ({ type: "text", content: r }));
       }
       // Heatmap carries its own shape (`[{x, y:[n,...]}]`); the bar-
@@ -2236,7 +2293,7 @@
       if (name === "candlestick") {
         const err = validateCandlestickSeries(refValue);
         if (err) return inlineError(err[0]);
-        const rendered = handler(refValue, bc);
+        const rendered = handler(refValue, bc, colorOn);
         return rendered.map((r) => ({ type: "text", content: r }));
       }
       // Histogram reuses the bar-family `[{x,y}]` validator.
@@ -2279,29 +2336,34 @@
   // Walk the AST *before* rendering; for any box carrying a renderer
   // tag, rewrite its items. Also flags any box that holds a dataRef
   // WITHOUT a renderer -- that's the "bare @ref" error case.
-  const applyChartRenderers = (item, dataMap, bc, budgetW, size) => {
+  const applyChartRenderers = (item, dataMap, bc, budgetW, size, colorOn) => {
     if (!item || typeof item !== "object") return;
     if (item.type === "box") {
       if (item.renderer) {
-        item.items = applyChartRenderer(item, dataMap, bc, budgetW, size);
+        item.items = applyChartRenderer(
+          item,
+          dataMap,
+          bc,
+          budgetW,
+          size,
+          colorOn,
+        );
       } else if (Array.isArray(item.items)) {
         const bareRef = item.items.find((it) => it && it.type === "dataRef");
         if (bareRef) {
+          const msg = `\u26a0 @${bareRef.name}: requires | renderer`;
           item.items = [
-            {
-              type: "text",
-              content: `\u26a0 @${bareRef.name}: requires | renderer`,
-            },
+            { type: "text", content: wrapANSI(msg, SEM_WARN, colorOn) },
           ];
         }
       }
     }
     if (Array.isArray(item.items)) {
       for (const child of item.items)
-        applyChartRenderers(child, dataMap, bc, budgetW, size);
+        applyChartRenderers(child, dataMap, bc, budgetW, size, colorOn);
     }
     if (item.type === "edge" && item.label) {
-      applyChartRenderers(item.label, dataMap, bc, budgetW, size);
+      applyChartRenderers(item.label, dataMap, bc, budgetW, size, colorOn);
     }
   };
 
@@ -2573,7 +2635,14 @@
     // asked for a bar chart, not a giant.)
     const barBudget =
       size?.w !== undefined ? Math.min(BAR_WIDTH_DEFAULT, size.w) : undefined;
-    applyChartRenderers(ast, ast.meta?.data, bc, barBudget, size);
+    // Browser color is opt-in via frontmatter `color: true`. The JS
+    // renderer has no TTY / NO_COLOR analog and defaulting to ON
+    // would break the ASCII parity gate against the Go CLI's
+    // `--color=never` invocation on every testdata fixture. Browser
+    // users who want color add `color: true` to their source; the
+    // showcase example demonstrates the opt-in.
+    const colorOn = ast.meta?.color === true;
+    applyChartRenderers(ast, ast.meta?.data, bc, barBudget, size, colorOn);
     const rows = renderBoxRows(ast, bc, {
       targetW: size?.w,
       targetH: size?.h,
@@ -2616,19 +2685,66 @@
     return null;
   };
 
+  // Hex fills for each semantic ANSI slot. Used by SVG rect + text
+  // when a run falls inside that kind's SGR wrapper. Null means "no
+  // kind active" → use `currentColor` so CSS custom props still
+  // control the default ink.
+  const SEM_FILL = {
+    [SEM_BULL]: "#40a040",
+    [SEM_BEAR]: "#c84040",
+    [SEM_DOJI]: "#c8aa20",
+    [SEM_WARN]: "#c84040",
+  };
+
+  // parseSGR strips ANSI SGR sequences from a row and returns the
+  // plain characters alongside a parallel `kinds` array that tags
+  // every visible char with the semantic slot in effect at that
+  // point (or null outside a wrapped run). Recognises the four
+  // pylon palette prefixes plus `\x1b[39m` / `\x1b[0m` resets.
+  // Unknown SGR codes clear the kind rather than erroring so future
+  // palette additions don't corrupt existing output.
+  const parseSGR = (row) => {
+    const chars = [];
+    const kinds = [];
+    let cur = null;
+    let i = 0;
+    while (i < row.length) {
+      if (row[i] === "\x1b" && row[i + 1] === "[") {
+        let end = i + 2;
+        while (end < row.length && row[end] !== "m") end++;
+        const code = row.slice(i + 2, end);
+        if (code === "38;2;64;160;64") cur = SEM_BULL;
+        else if (code === "38;2;200;64;64") cur = SEM_BEAR;
+        else if (code === "38;2;200;170;32") cur = SEM_DOJI;
+        else if (code === "1;38;2;200;64;64") cur = SEM_WARN;
+        else cur = null; // reset or anything we don't recognise
+        i = end + 1;
+        continue;
+      }
+      chars.push(row[i]);
+      kinds.push(cur);
+      i++;
+    }
+    return { text: chars.join(""), kinds };
+  };
+
   // emitSVGRow walks a single ASCII row and appends a mix of <rect>
   // and <text> elements to the svg root. Unicode block glyphs
   // (`█▓▒░`) coalesce into contiguous <rect> runs rendered with
   // opacity matching the ramp step, so chart bars show as clean
   // solid / dithered blocks instead of font characters whose
   // antialiasing differs by renderer. Every other cell becomes a
-  // <text> segment at its natural position.
+  // <text> segment at its natural position. When a run falls inside
+  // an SGR semantic wrapper (emitted by the chart renderers when
+  // ColorEnabled), its fill is overridden with the palette hex.
   const emitSVGRow = (svg, ns, row, x0, rowIdx) => {
+    const { text, kinds } = parseSGR(row);
     const yTop = rowIdx * CELL_PX_H;
     const baseline = (rowIdx + 0.5) * CELL_PX_H;
-    const flushText = (start, end) => {
+    const fillFor = (kind) => (kind ? SEM_FILL[kind] : "currentColor");
+    const flushText = (start, end, kind) => {
       if (start >= end) return;
-      const seg = row.slice(start, end);
+      const seg = text.slice(start, end);
       if (seg.trim() === "") return;
       const t = document.createElementNS(ns, "text");
       t.setAttribute("x", x0 + start * CELL_PX_W);
@@ -2646,35 +2762,56 @@
       t.setAttribute("lengthAdjust", "spacingAndGlyphs");
       t.setAttribute("style", "white-space: pre");
       t.setAttribute("xml:space", "preserve");
-      t.setAttribute("fill", "currentColor");
+      t.setAttribute("fill", fillFor(kind));
+      if (kind === SEM_WARN) t.setAttribute("font-weight", "bold");
       t.textContent = seg;
       svg.append(t);
     };
     let i = 0;
     let textStart = 0;
-    while (i < row.length) {
-      const op = svgBlockOpacity(row[i]);
+    while (i < text.length) {
+      const op = svgBlockOpacity(text[i]);
       if (op === null) {
         i++;
         continue;
       }
+      const kind = kinds[i];
       let j = i;
-      while (j < row.length && svgBlockOpacity(row[j]) === op) {
+      while (
+        j < text.length &&
+        svgBlockOpacity(text[j]) === op &&
+        kinds[j] === kind
+      ) {
         j++;
       }
-      flushText(textStart, i);
+      // Flush the preceding text up to this rect; the text can have
+      // its own kind changes so split it further if needed.
+      let segStart = textStart;
+      for (let k = textStart + 1; k <= i; k++) {
+        if (k === i || kinds[k] !== kinds[segStart]) {
+          flushText(segStart, k, kinds[segStart]);
+          segStart = k;
+        }
+      }
       const rect = document.createElementNS(ns, "rect");
       rect.setAttribute("x", x0 + i * CELL_PX_W);
       rect.setAttribute("y", yTop);
       rect.setAttribute("width", (j - i) * CELL_PX_W);
       rect.setAttribute("height", CELL_PX_H);
-      rect.setAttribute("fill", "currentColor");
+      rect.setAttribute("fill", fillFor(kind));
       if (op < 1) rect.setAttribute("opacity", op);
       svg.append(rect);
       i = j;
       textStart = j;
     }
-    flushText(textStart, row.length);
+    // Trailing text — split by kind changes.
+    let segStart = textStart;
+    for (let k = textStart + 1; k <= text.length; k++) {
+      if (k === text.length || kinds[k] !== kinds[segStart]) {
+        flushText(segStart, k, kinds[segStart]);
+        segStart = k;
+      }
+    }
   };
 
   const drawCanvasBorder = (ctx, w, h, color) => {
@@ -2762,16 +2899,25 @@
       const pre = document.createElement("pre");
       pre.className = "pylon-ascii";
       // Per-cell DOM so CJK / emoji stay aligned regardless of font.
+      // SGR sequences in the row get translated into per-cell CSS
+      // classes (`pylon-bull` / `pylon-bear` / `pylon-doji` /
+      // `pylon-warn`); the escape bytes themselves are consumed so
+      // they never show as literal text. Non-colored cells keep the
+      // default `pylon-ascii-cell` class.
       for (let i = 0; i < rows.length; i++) {
         if (i > 0) pre.append(document.createTextNode("\n"));
-        for (const ch of rows[i]) {
+        const { text, kinds } = parseSGR(rows[i]);
+        for (let k = 0; k < text.length; k++) {
+          const ch = text[k];
           const cw = charWidth(ch.codePointAt(0));
           if (cw === 0) {
             pre.append(document.createTextNode(ch));
             continue;
           }
           const cell = document.createElement("span");
-          cell.className = "pylon-ascii-cell";
+          cell.className = kinds[k]
+            ? `pylon-ascii-cell pylon-${kinds[k]}`
+            : "pylon-ascii-cell";
           cell.style.width = cw + "ch";
           cell.textContent = ch;
           pre.append(cell);
