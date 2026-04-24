@@ -1,4 +1,5 @@
 ---
+color: true
 data:
   sales:
     - x: Mon
