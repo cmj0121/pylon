@@ -54,7 +54,16 @@ func candlestickGlyphs(bc boxChars) candlestickRamp {
 // to a single doji row at the bottom — the deterministic branch that
 // sidesteps divide-by-zero. The validator has ruled out bad shape /
 // non-finite prices by this point, so type assertions are infallible.
-func renderCandlestick(series []map[string]interface{}, bc boxChars) []string {
+//
+// colorOn wraps the BODY glyphs (bull, bear, doji) with the semantic
+// ANSI palette via wrapANSI. Wick and blank glyphs stay uncoloured so
+// the scaffolding of the chart reads the same in plain output. Under
+// `theme: ascii` (bc == asciiBox) color is force-suppressed so ASCII
+// output is always plain.
+func renderCandlestick(series []map[string]interface{}, bc boxChars, colorOn bool) []string {
+	if bc == asciiBox {
+		colorOn = false
+	}
 	g := candlestickGlyphs(bc)
 	H := candlestickHeightDefault
 	n := len(series)
@@ -134,11 +143,11 @@ func renderCandlestick(series []map[string]interface{}, bc boxChars) []string {
 				// c == o → bodyTop == bodyBot, one doji row.
 				switch {
 				case cs[i] > os[i]:
-					glyph = g.bull
+					glyph = wrapANSI(g.bull, semBull, colorOn)
 				case cs[i] < os[i]:
-					glyph = g.bear
+					glyph = wrapANSI(g.bear, semBear, colorOn)
 				default:
-					glyph = g.doji
+					glyph = wrapANSI(g.doji, semDoji, colorOn)
 				}
 			default:
 				glyph = g.wick

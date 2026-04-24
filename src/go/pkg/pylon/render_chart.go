@@ -45,7 +45,12 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 	// enough to exercise the shared helper without dragging the
 	// whole frontmatter struct through the render path.
 	if _, msg, ok := rendererInlineError(b, Meta{Data: data}); ok {
-		return []string{msg}
+		// Warning rows colour the whole string as semWarn (bold red);
+		// under `theme: ascii` colour is suppressed so the plain text
+		// stays byte-identical with pre-ANSI output. wrapANSI is a
+		// no-op when colorOn is false.
+		colorOn := b.Meta.ColorEnabled && bc != asciiBox
+		return []string{wrapANSI(msg, semWarn, colorOn)}
 	}
 
 	switch b.Renderer {
@@ -59,15 +64,15 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		return renderBanner(b, bc)
 	case "progress":
 		if firstDataRef(b) != nil {
-			return renderProgressSeries(chartSeries(b, data), bc)
+			return renderProgressSeries(chartSeries(b, data), bc, b.Meta.ColorEnabled)
 		}
-		return renderProgressScalar(b, bc)
+		return renderProgressScalar(b, bc, b.Meta.ColorEnabled)
 	case "heatmap":
 		return renderHeatmap(chartSeries(b, data), bc)
 	case "sparkline":
 		return renderSparkline(chartSeries(b, data), bc)
 	case "candlestick":
-		return renderCandlestick(chartSeries(b, data), bc)
+		return renderCandlestick(chartSeries(b, data), bc, b.Meta.ColorEnabled)
 	case "hist":
 		return renderHist(chartSeries(b, data), bc)
 	case "step":
