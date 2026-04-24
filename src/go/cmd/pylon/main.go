@@ -30,6 +30,7 @@ type CLI struct {
 	Input   string           `kong:"arg,optional,type='existingfile',help='input file; stdin when omitted'"`
 	Verbose int              `kong:"short='v',type='counter',help='verbose; repeat for debug (-vv)'"`
 	Strict  bool             `kong:"help='exit non-zero when any diagnostic is emitted (for CI gating)'"`
+	Color   string           `kong:"enum='auto,always,never',default='auto',help='when to emit ANSI color escapes'"`
 	Version kong.VersionFlag `kong:"help='show version and exit'"`
 }
 
@@ -51,6 +52,7 @@ func main() {
 	}
 
 	ast := pylon.Parse(src)
+	ast.Meta.ColorEnabled = resolveColor(cli.Color, ast.Meta.Color)
 	diags := pylon.Validate(ast)
 	for _, d := range diags {
 		emitDiagnostic(os.Stderr, displayPath(cli.Input), d)
@@ -155,4 +157,47 @@ func writeOutputBytes(path string, payload []byte) error {
 		return err
 	}
 	return os.WriteFile(path, payload, 0o644)
+}
+
+// resolveColor converts the `--color=auto|always|never` flag into the
+// boolean that ends up on Meta.ColorEnabled, with the source file's
+// `color:` frontmatter key as a middle-priority override:
+//
+//  1. `--color=always` / `--color=never` — highest priority, deterministic
+//     switch for CI and scripted callers.
+//  2. `color: true|false` in frontmatter — the source file's preference,
+//     honored under `--color=auto` so a chart author can say "this one
+//     needs color" (or "this one is plain on purpose") without asking
+//     every reader to pass the right flag.
+//  3. Auto-mode heuristics — permissive-but-safe: `NO_COLOR` unset,
+//     stdout is a character device. `COLORTERM=truecolor|24bit` is a
+//     positive signal that short-circuits the TTY test for nohup /
+//     tmux-outer-pipe cases.
+//
+// `theme: ascii` is NOT consulted here — that check lives inside the
+// renderers themselves (`bc == asciiBox` force-suppresses color on
+// every primitive), so the ASCII theme wins even against --color=always
+// no matter how the flag landed.
+func resolveColor(mode string, fmPref *bool) bool {
+	switch mode {
+	case "always":
+		return true
+	case "never":
+		return false
+	default:
+		if fmPref != nil {
+			return *fmPref
+		}
+		if os.Getenv("NO_COLOR") != "" {
+			return false
+		}
+		if ct := os.Getenv("COLORTERM"); ct == "truecolor" || ct == "24bit" {
+			return true
+		}
+		stat, err := os.Stdout.Stat()
+		if err != nil {
+			return false
+		}
+		return stat.Mode()&os.ModeCharDevice != 0
+	}
 }

@@ -169,3 +169,39 @@ func TestFrontmatterNoFrontmatter(t *testing.T) {
 		t.Errorf("unexpected Meta.Errors without frontmatter: %v", root.Meta.Errors)
 	}
 }
+
+// TestFrontmatterColor asserts Meta.Color picks up explicit
+// `color: true` / `color: false` and stays nil when the key is
+// absent or malformed. Other values are silently ignored (no
+// toast) to match how `theme:` and `size:` handle bad input.
+func TestFrontmatterColor(t *testing.T) {
+	cases := []struct {
+		src     string
+		want    *bool
+		wantSet bool
+	}{
+		{"---\ncolor: true\n---\n[- x -]", boolPtr(true), true},
+		{"---\ncolor: false\n---\n[- x -]", boolPtr(false), true},
+		{"---\ncolor: maybe\n---\n[- x -]", nil, false},
+		{"---\n---\n[- x -]", nil, false},
+		{"[- x -]", nil, false},
+	}
+	for _, tc := range cases {
+		root := Parse(tc.src)
+		got := root.Meta.Color
+		if (got == nil) != (tc.want == nil) {
+			t.Errorf("Meta.Color nil-ness mismatch for %q: got=%v want=%v",
+				tc.src, got, tc.want)
+			continue
+		}
+		if got != nil && *got != *tc.want {
+			t.Errorf("Meta.Color = %v, want %v for %q",
+				*got, *tc.want, tc.src)
+		}
+		if tc.wantSet && root.Meta.ColorSpan == (Span{}) {
+			t.Errorf("expected non-zero ColorSpan for %q", tc.src)
+		}
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

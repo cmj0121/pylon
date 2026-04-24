@@ -698,6 +698,150 @@ func TestRenderGantt_SizeFloor(t *testing.T) {
 		t.Errorf("didn't expect a 20-cell run (would mean default budget still applied):\n%s", got)
 	}
 }
+// TestRenderCandlestick_Color asserts that enabling ColorEnabled on
+// the root meta wraps candlestick body glyphs (bull / bear / doji)
+// with 24-bit truecolour SGR escapes. The assertion is loose — only
+// the `\x1b[38;2;` prefix is required, so the test survives palette
+// tweaks inside wrapANSI.
+func TestRenderCandlestick_Color(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  ohlc:",
+		"    - x: a",
+		"      o: 10",
+		"      h: 15",
+		"      l: 8",
+		"      c: 14",
+		"    - x: b",
+		"      o: 14",
+		"      h: 16",
+		"      l: 9",
+		"      c: 10",
+		"    - x: c",
+		"      o: 12",
+		"      h: 13",
+		"      l: 11",
+		"      c: 12",
+		"---",
+		"[ @ohlc | candlestick ]",
+	}, "\n")
+	ast := Parse(src)
+	ast.Meta.ColorEnabled = true
+	got := RenderASCII(ast)
+	if !strings.Contains(got, "\x1b[38;2;") {
+		t.Errorf("expected truecolour SGR prefix in coloured candlestick output; got:\n%s", got)
+	}
+	// Plain (default) output must not leak any ANSI — the standing
+	// TestNoANSILeak guard covers the global invariant, but pinning
+	// it here makes the regression obvious if this test ever flips.
+	plain := RenderASCII(Parse(src))
+	if strings.Contains(plain, "\x1b[") {
+		t.Errorf("plain candlestick output must not contain ANSI escapes; got:\n%s", plain)
+	}
+}
+
+// TestRenderCandlestick_ASCIIThemeSuppressesColor asserts that
+// `theme: ascii` force-suppresses color even when ColorEnabled is
+// true — the ASCII theme is meant to be byte-plain.
+func TestRenderCandlestick_ASCIIThemeSuppressesColor(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"theme: ascii",
+		"data:",
+		"  ohlc:",
+		"    - x: a",
+		"      o: 10",
+		"      h: 15",
+		"      l: 8",
+		"      c: 14",
+		"---",
+		"[ @ohlc | candlestick ]",
+	}, "\n")
+	ast := Parse(src)
+	ast.Meta.ColorEnabled = true
+	got := RenderASCII(ast)
+	if strings.Contains(got, "\x1b[") {
+		t.Errorf("theme: ascii must suppress ANSI even when ColorEnabled; got:\n%s", got)
+	}
+}
+
+// TestRenderProgress_ColorThresholds exercises the three progressKind
+// bands: >=80 → bull (green), >=40 → doji (amber), <40 → bear (red).
+// Each row is isolated by its percent label so the assertion can
+// locate the correct line before checking for the SGR prefix.
+func TestRenderProgress_ColorThresholds(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  work:",
+		"    - x: high",
+		"      y: 90",
+		"    - x: mid",
+		"      y: 50",
+		"    - x: low",
+		"      y: 10",
+		"---",
+		"[ @work | progress ]",
+	}, "\n")
+	ast := Parse(src)
+	ast.Meta.ColorEnabled = true
+	got := RenderASCII(ast)
+	lines := strings.Split(got, "\n")
+	var hi, mid, lo string
+	for _, l := range lines {
+		switch {
+		case strings.Contains(l, "90%"):
+			hi = l
+		case strings.Contains(l, "50%"):
+			mid = l
+		case strings.Contains(l, "10%"):
+			lo = l
+		}
+	}
+	if hi == "" || mid == "" || lo == "" {
+		t.Fatalf("expected 90%%/50%%/10%% rows in output; got:\n%s", got)
+	}
+	for _, row := range []struct {
+		name string
+		line string
+	}{
+		{"90%", hi},
+		{"50%", mid},
+		{"10%", lo},
+	} {
+		if !strings.Contains(row.line, "\x1b[38;2;") {
+			t.Errorf("%s row missing truecolour SGR prefix: %q", row.name, row.line)
+		}
+	}
+	// Plain (default) output must stay ANSI-free.
+	plain := RenderASCII(Parse(src))
+	if strings.Contains(plain, "\x1b[") {
+		t.Errorf("plain progress output must not contain ANSI escapes; got:\n%s", plain)
+	}
+}
+
+// TestRenderWarn_Color asserts warning rows pick up semWarn's bold-
+// red wrapper when ColorEnabled is on. The assertion checks the
+// `\x1b[1;` bold-prefix byte sequence rather than the exact palette
+// so it survives wrapANSI implementation tweaks.
+func TestRenderWarn_Color(t *testing.T) {
+	ast := Parse("[ foo | weird ]")
+	ast.Meta.ColorEnabled = true
+	got := RenderASCII(ast)
+	if !strings.Contains(got, "⚠ unknown renderer: weird") {
+		t.Fatalf("expected warning text in output; got:\n%s", got)
+	}
+	if !strings.Contains(got, "\x1b[1;") {
+		t.Errorf("expected bold-red SGR prefix around warning row; got:\n%s", got)
+	}
+	// Plain (default) output must stay ANSI-free.
+	plain := RenderASCII(Parse("[ foo | weird ]"))
+	if strings.Contains(plain, "\x1b[") {
+		t.Errorf("plain warning output must not contain ANSI escapes; got:\n%s", plain)
+	}
+}
+
 
 // TestRenderChart_DoesNotDisturbNormalBoxes is a regression guard:
 // normal (non-chart) boxes must render exactly as they did before

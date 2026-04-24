@@ -53,11 +53,12 @@ data:
 
 ### Keys
 
-| Key     | Value type  | Description                                                              |
-| ------- | ----------- | ------------------------------------------------------------------------ |
-| `size`  | `INT x INT` | Maximum outer width x height in cells. Content stays tight when smaller. |
-| `theme` | identifier  | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.       |
-| `data`  | list or map | One or more `{x, y}` series for `@ref` / renderer boxes.                 |
+| Key     | Value type    | Description                                                                           |
+| ------- | ------------- | ------------------------------------------------------------------------------------- |
+| `size`  | `INT x INT`   | Maximum outer width x height in cells. Content stays tight when smaller.              |
+| `theme` | identifier    | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.                    |
+| `data`  | list or map   | One or more `{x, y}` series for `@ref` / renderer boxes.                              |
+| `color` | `true\|false` | Source-file preference for ANSI color in ASCII output. See [ANSI color](#ansi-color). |
 
 `size` caps the outer dimensions; flow chains that would exceed the
 declared width wrap to a vertical stack. `theme: ascii` swaps the
@@ -132,127 +133,12 @@ Multiple top-level nodes stack vertically:
 (World)
 ```
 
-````txt
-        ┌───────────┐
-        │   Hello   │
-        └───────────┘
-             ```
-           ### Keys
-| Key     | Value type  | Desc
-| ------- | ----------- | ----
-| `size`  | `INT x INT` | Maxi
-| `theme` | identifier  | Pale
-           default
-, `ascii`, `dark`, `light`.
-| `data`  | list or map | One
-`size` caps the outer dimensio
-declared width wrap to a verti
-Unicode box-drawing glyphs for
-### YAML subset accepted by `d
-The `data:` parser is a narrow
-- **Block style only.** Flow s
-              `
-         ┌─────────┐
-         │   ...   │
-         └─────────┘
-         `, `{...}`
-         is rejected,
-except `y:` may take a flow-st
-             `y:
-       ┌─────────────┐
-       │   1, 2, 3   │
-       └─────────────┘
-              `
-to fit 2D shapes like `heatmap
-    arrays stay rejected.
-- **Spaces-only indent.** A ta
-rejects the whole block via to
-- **Scalars.** Numbers, double
-   trimmed, taken literally
-              .
-- **No reserved-word coercion.
-  `no` stay literal strings.
-- **Not supported.** Multiline
-           `|`, `>`
-          , anchors
-           `&`, `*`
-              ,
-           and tags
-             `!!`
-              .
-Unsupported shapes leave `data
-`Unsupported data: frontmatter
-       ### Data shapes
-Two shapes are accepted. A fla
-exposes each key as its own re
-     `@counter`, `@sales`
-              :
-           ```pylon
-             ---
-            data:
-           counter:
-            - x: 1
-            y: 10
-            sales:
-            - x: 1
-            y: 100
-             ---
-    ┌────────────────────┐
-    │ ⚠ @sales not found │
-    └────────────────────┘
-             ```
-Unquoted string `x` labels are
-      friendly default.
-           ## Nodes
-Nodes are the drawn units of a
-lines, nested nodes, or a flow
-             - `
-        ┌───────────┐
-        │   LABEL   │
-        └───────────┘
-` — bordered; the wrapper is d
-             - `
-            LABEL
-` — borderless; wrapper drops,
-        parent layout.
-        ### Alignment
-The alignment dash must be flu
-the dash and the bracket defea
-| Form      | Result
-| --------- | ----------------
-             | `
-          ┌───────┐
-          │   x   │
-          └───────┘
-        `   | Centered
-           default
-.
-             | `
-          ┌───────┐
-          │   x   │
-          └───────┘
-         ` | Centered
-     explicit both sides
-    .                   |
-             | `
-          ┌───────┐
-          │     x │
-          └───────┘
-      `  | Right-aligned
-left spring pushes content rig
-             . |
-             | `
-          ┌───────┐
-          │ x     │
-          └───────┘
-`  | Left-aligned.
-Multiple top-level nodes stack
-           ```pylon
-        ┌───────────┐
-        │   Hello   │
-        └───────────┘
-            World
-````
+```txt
+   ┌───────────┐
+   │   Hello   │
+   └───────────┘
+       World
+```
 
 ## Edges
 
@@ -271,7 +157,9 @@ A borderless node between two edge halves labels the edge:
 ```
 
 ```txt
-⚠ @sales: requires | renderer
+┌───────────┐               ┌─────────┐
+│   Alice   │──  friend  ──▶│   Bob   │
+└───────────┘               └─────────┘
 ```
 
 Bidirectional `<-- ( role ) -->` and reverse `<-- ( role ) --` both
@@ -1026,6 +914,80 @@ at
 to rasterize PNG output. With stripped debug info
 (`-ldflags="-s -w" -trimpath`), `dist/pylon` is around 4.8 MiB on
 darwin/arm64.
+
+## ANSI color
+
+The Go CLI optionally emits 24-bit SGR escape sequences when rendering
+ASCII output to a terminal. Color is opt-in semantic emphasis — it
+highlights the primitives where up / down / warn carries meaning, and
+leaves the rest alone. SVG and PNG have their own palettes (CSS custom
+properties on the web, Go theme colors for raster); ANSI is
+terminal-only and unrelated to either.
+
+Colored primitives in v1: `candlestick` bodies, `progress` fills, and
+inline `⚠ NAME: msg` warning rows. Every other primitive (`bar`,
+`vbar`, `hist`, `sparkline`, `heatmap`, `step`, `gantt`, `banner`,
+`text`) stays uncolored — they are comparison or trend viz, not
+good-vs-bad signals, so semantic color would mislead more than it
+helps. The JS / browser renderer has no ANSI path.
+
+### `--color` flag
+
+`--color=auto|always|never` controls whether escape sequences are
+emitted. Default is `auto`.
+
+Decision order (first match wins):
+
+| Condition                                             | Color on? |
+| ----------------------------------------------------- | --------- |
+| `--color=never`                                       | no        |
+| `--color=always`                                      | yes       |
+| `--color=auto` + frontmatter `color: true`            | yes       |
+| `--color=auto` + frontmatter `color: false`           | no        |
+| `--color=auto` + `NO_COLOR` env set                   | no        |
+| `--color=auto` + `COLORTERM` is `truecolor` / `24bit` | yes       |
+| `--color=auto` + stdout is an interactive TTY         | yes       |
+| otherwise under `auto`                                | no        |
+
+The `color:` frontmatter key lets a source file declare its own
+preference — useful when a specific chart is meant to be colored
+(or pointedly plain) regardless of the reader's shell setup. The
+CLI flag still wins: `--color=never` overrides `color: true` and
+vice versa, so CI and scripted callers retain a deterministic
+switch.
+
+`NO_COLOR=1` wins whenever mode is `auto` and the frontmatter is
+silent, per <https://no-color.org/>. `COLORTERM=truecolor` (or
+`24bit`) is a positive signal that short-circuits the TTY check —
+it covers `nohup` / tmux-outer-pipe cases where isatty would be
+false but the user clearly wants color. Otherwise the TTY check is
+enough: most modern terminals (iTerm, Alacritty, Kitty,
+Terminal.app, Windows Terminal, GNOME Terminal) parse 24-bit SGR
+cleanly whether or not they advertise `COLORTERM`. On Windows,
+`auto` falls back to off because stdlib TTY detection is flaky
+there; pass `--color=always` explicitly to force color on Windows
+terminals that do support it.
+
+`theme: ascii` suppresses color unconditionally, even under
+`--color=always`. ASCII theme is the plain-text opt-out; choosing it
+says "no Unicode, no color," and the CLI honours that.
+
+### Semantic palette
+
+<!-- markdownlint-disable MD060 -->
+
+| Kind        | Glyphs colored                            | SGR                      |
+| ----------- | ----------------------------------------- | ------------------------ |
+| bull / up   | candlestick bull body, progress ≥80% fill | `\x1b[38;2;64;160;64m`   |
+| bear / down | candlestick bear body, progress <40% fill | `\x1b[38;2;200;64;64m`   |
+| neutral     | candlestick doji, progress 40–79% fill    | `\x1b[38;2;200;170;32m`  |
+| warn        | whole inline `⚠ NAME: msg` row           | `\x1b[1;38;2;200;64;64m` |
+
+<!-- markdownlint-enable MD060 -->
+
+Each colored span is terminated by a `\x1b[0m` reset. The progress
+thresholds are applied per-row: a multi-row `@ref | progress` can mix
+bull / neutral / bear fills in the same box.
 
 ## Building from source
 

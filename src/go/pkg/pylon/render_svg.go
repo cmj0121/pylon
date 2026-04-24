@@ -46,6 +46,12 @@ func svgFillForTheme(theme string) string {
 // rely on precise cell alignment across variable fonts, prefer the JS
 // renderer. Per-cell <tspan> alignment is a potential follow-up.
 func RenderSVG(ast *Box) string {
+	// ANSI colour is terminal-only. SVG has its own colour path
+	// (CSS / fill attributes on <text>/<rect>). Force ColorEnabled
+	// off so `wrapANSI` becomes a no-op and no SGR escape sequence
+	// leaks into the rendered rows — otherwise it would be painted
+	// as literal text `[38;2;…m` in the output.
+	ast.Meta.ColorEnabled = false
 	rows := RenderRows(ast)
 	if len(rows) == 0 {
 		rows = []string{""}

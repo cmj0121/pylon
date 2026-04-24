@@ -5,27 +5,27 @@ Small self-contained `.pylon` files showing individual features.
 Render any example by piping into the Pylon WYSIWYG demo (`make -C src/js run`)
 or by copying the source into a `<pylon-chart>` element.
 
-| File                                       | Shows                                               |
-| ------------------------------------------ | --------------------------------------------------- |
-| [hello.pylon](hello.pylon)                 | Simplest bordered node                              |
-| [flow-chart.pylon](flow-chart.pylon)       | Right-arrow edges between three nodes               |
-| [alignment.pylon](alignment.pylon)         | Centered / right / left alignment markers           |
-| [nested-nodes.pylon](nested-nodes.pylon)   | Bordered container with two nested nodes            |
-| [ref-self-loop.pylon](ref-self-loop.pylon) | Same-row `&ref` arc under the declaration           |
-| [ref-cross-row.pylon](ref-cross-row.pylon) | Cross-row `&ref` routed through the right gutter    |
-| [edge-labels.pylon](edge-labels.pylon)     | Labelled edge between two nodes                     |
-| [chart-hbar.pylon](chart-hbar.pylon)       | Horizontal bar chart from `data:` frontmatter       |
-| [chart-vbar.pylon](chart-vbar.pylon)       | Vertical bar chart from `data:` frontmatter         |
-| [banner.pylon](banner.pylon)               | Block-letter banner of a literal string             |
-| [progress.pylon](progress.pylon)           | Progress bars with `%` labels from a `@ref` series  |
-| [heatmap.pylon](heatmap.pylon)             | 2D matrix of ramp glyphs from a `@ref` series       |
-| [sparkline.pylon](sparkline.pylon)         | Inline trend row of ramp glyphs from a `@ref`       |
-| [candlestick.pylon](candlestick.pylon)     | OHLC candles with bull/bear/doji bodies and wicks   |
-| [hist.pylon](hist.pylon)                   | Gap-less 8-row histogram of pre-binned counts       |
-| [step.pylon](step.pylon)                   | 5-row cumulative step line with corner connectors   |
-| [gantt.pylon](gantt.pylon)                 | Task bars over a shared horizontal budget           |
-| [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
-| [showcase.pylon](showcase.pylon)           | Every chart + diagram primitive in one source file  |
+| File                                       | Shows                                                                   |
+| ------------------------------------------ | ----------------------------------------------------------------------- |
+| [hello.pylon](hello.pylon)                 | Simplest bordered node                                                  |
+| [flow-chart.pylon](flow-chart.pylon)       | Right-arrow edges between three nodes                                   |
+| [alignment.pylon](alignment.pylon)         | Centered / right / left alignment markers                               |
+| [nested-nodes.pylon](nested-nodes.pylon)   | Bordered container with two nested nodes                                |
+| [ref-self-loop.pylon](ref-self-loop.pylon) | Same-row `&ref` arc under the declaration                               |
+| [ref-cross-row.pylon](ref-cross-row.pylon) | Cross-row `&ref` routed through the right gutter                        |
+| [edge-labels.pylon](edge-labels.pylon)     | Labelled edge between two nodes                                         |
+| [chart-hbar.pylon](chart-hbar.pylon)       | Horizontal bar chart from `data:` frontmatter                           |
+| [chart-vbar.pylon](chart-vbar.pylon)       | Vertical bar chart from `data:` frontmatter                             |
+| [banner.pylon](banner.pylon)               | Block-letter banner of a literal string                                 |
+| [progress.pylon](progress.pylon)           | Progress bars with `%` labels from a `@ref` series                      |
+| [heatmap.pylon](heatmap.pylon)             | 2D matrix of ramp glyphs from a `@ref` series                           |
+| [sparkline.pylon](sparkline.pylon)         | Inline trend row of ramp glyphs from a `@ref`                           |
+| [candlestick.pylon](candlestick.pylon)     | OHLC candles with bull/bear/doji bodies and wicks                       |
+| [hist.pylon](hist.pylon)                   | Gap-less 8-row histogram of pre-binned counts                           |
+| [step.pylon](step.pylon)                   | 5-row cumulative step line with corner connectors                       |
+| [gantt.pylon](gantt.pylon)                 | Task bars over a shared horizontal budget                               |
+| [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII                     |
+| [showcase.pylon](showcase.pylon)           | Every chart + diagram primitive; opts into ANSI color via `color: true` |
 
 ## hello.pylon
 

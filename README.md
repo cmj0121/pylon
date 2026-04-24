@@ -95,6 +95,13 @@ pylon -f png -o diagram.png examples/flow-chart.pylon
 
 Flag details: `pylon --help`.
 
+Pass `--color=auto|always|never` to control ANSI color in ASCII
+output. Auto (the default) enables color when stdout is a TTY,
+`NO_COLOR` is unset, and `COLORTERM` is `truecolor`. Candlestick
+bodies, progress bars, and inline warnings colorize; other primitives
+stay plain. See [`docs/SPEC.md`](docs/SPEC.md#ansi-color) for the full
+decision table and palette.
+
 ### Vim
 
 ```vim

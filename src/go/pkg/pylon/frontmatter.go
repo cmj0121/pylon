@@ -81,6 +81,22 @@ func parseFrontmatter(src *Source) Meta {
 		case "theme":
 			meta.Theme = raw
 			meta.ThemeSpan = lineSpan
+		case "color":
+			// Accept lowercase `true` / `false`. Anything else leaves
+			// Color nil (no preference) so the CLI falls through to
+			// auto-mode heuristics — noisy values are silently ignored
+			// rather than producing a toast, matching how `theme:` and
+			// `size:` handle malformed values.
+			switch raw {
+			case "true":
+				v := true
+				meta.Color = &v
+				meta.ColorSpan = lineSpan
+			case "false":
+				v := false
+				meta.Color = &v
+				meta.ColorSpan = lineSpan
+			}
 		}
 		i++
 	}
