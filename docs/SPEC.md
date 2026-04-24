@@ -53,11 +53,12 @@ data:
 
 ### Keys
 
-| Key     | Value type  | Description                                                              |
-| ------- | ----------- | ------------------------------------------------------------------------ |
-| `size`  | `INT x INT` | Maximum outer width x height in cells. Content stays tight when smaller. |
-| `theme` | identifier  | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.       |
-| `data`  | list or map | One or more `{x, y}` series for `@ref` / renderer boxes.                 |
+| Key     | Value type    | Description                                                                           |
+| ------- | ------------- | ------------------------------------------------------------------------------------- |
+| `size`  | `INT x INT`   | Maximum outer width x height in cells. Content stays tight when smaller.              |
+| `theme` | identifier    | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.                    |
+| `data`  | list or map   | One or more `{x, y}` series for `@ref` / renderer boxes.                              |
+| `color` | `true\|false` | Source-file preference for ANSI color in ASCII output. See [ANSI color](#ansi-color). |
 
 `size` caps the outer dimensions; flow chains that would exceed the
 declared width wrap to a vertical stack. `theme: ascii` swaps the
@@ -935,26 +936,37 @@ helps. The JS / browser renderer has no ANSI path.
 `--color=auto|always|never` controls whether escape sequences are
 emitted. Default is `auto`.
 
-| Condition                                     | Color on? |
-| --------------------------------------------- | --------- |
-| `--color=never`                               | no        |
-| `--color=always`                              | yes       |
-| `--color=auto` + `NO_COLOR` set               | no        |
-| `--color=auto` + `COLORTERM=truecolor\|24bit` | yes       |
-| `--color=auto` + stdout is a TTY              | yes       |
-| otherwise under `auto`                        | no        |
+Decision order (first match wins):
 
-`NO_COLOR=1` wins whenever mode is `auto`, per
-<https://no-color.org/>. `COLORTERM=truecolor` (or `24bit`) is a
-positive signal that short-circuits the TTY check — it covers
-`nohup` / tmux-outer-pipe cases where isatty would be false but
-the user clearly wants color. Otherwise the TTY check is enough:
-most modern terminals (iTerm, Alacritty, Kitty, Terminal.app,
-Windows Terminal, GNOME Terminal) parse 24-bit SGR cleanly whether
-or not they advertise `COLORTERM`. On Windows, `auto` falls back to
-off because stdlib TTY detection is flaky there; pass
-`--color=always` explicitly to force color on Windows terminals
-that do support it.
+| Condition                                             | Color on? |
+| ----------------------------------------------------- | --------- |
+| `--color=never`                                       | no        |
+| `--color=always`                                      | yes       |
+| `--color=auto` + frontmatter `color: true`            | yes       |
+| `--color=auto` + frontmatter `color: false`           | no        |
+| `--color=auto` + `NO_COLOR` env set                   | no        |
+| `--color=auto` + `COLORTERM` is `truecolor` / `24bit` | yes       |
+| `--color=auto` + stdout is an interactive TTY         | yes       |
+| otherwise under `auto`                                | no        |
+
+The `color:` frontmatter key lets a source file declare its own
+preference — useful when a specific chart is meant to be colored
+(or pointedly plain) regardless of the reader's shell setup. The
+CLI flag still wins: `--color=never` overrides `color: true` and
+vice versa, so CI and scripted callers retain a deterministic
+switch.
+
+`NO_COLOR=1` wins whenever mode is `auto` and the frontmatter is
+silent, per <https://no-color.org/>. `COLORTERM=truecolor` (or
+`24bit`) is a positive signal that short-circuits the TTY check —
+it covers `nohup` / tmux-outer-pipe cases where isatty would be
+false but the user clearly wants color. Otherwise the TTY check is
+enough: most modern terminals (iTerm, Alacritty, Kitty,
+Terminal.app, Windows Terminal, GNOME Terminal) parse 24-bit SGR
+cleanly whether or not they advertise `COLORTERM`. On Windows,
+`auto` falls back to off because stdlib TTY detection is flaky
+there; pass `--color=always` explicitly to force color on Windows
+terminals that do support it.
 
 `theme: ascii` suppresses color unconditionally, even under
 `--color=always`. ASCII theme is the plain-text opt-out; choosing it

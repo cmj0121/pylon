@@ -177,6 +177,17 @@ type Meta struct {
 	// this flag before invoking any renderer. No package-level mutable
 	// state carries the color toggle — it rides on the AST root.
 	ColorEnabled bool
+
+	// Color carries the frontmatter `color:` preference. Nil when the
+	// key is absent, *true / *false when the source explicitly sets
+	// it. The CLI consults this as a middle-priority override between
+	// `--color=always|never` (highest) and the `--color=auto` heuristics
+	// (lowest). Separate from ColorEnabled so consumers can tell
+	// "source said" from "runtime decided".
+	Color *bool
+	// ColorSpan covers the line where `color: ...` was declared; zero
+	// Span when Color is nil.
+	ColorSpan Span
 }
 
 // MetaError is a single frontmatter parse error with the source span

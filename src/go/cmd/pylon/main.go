@@ -52,7 +52,7 @@ func main() {
 	}
 
 	ast := pylon.Parse(src)
-	ast.Meta.ColorEnabled = resolveColor(cli.Color)
+	ast.Meta.ColorEnabled = resolveColor(cli.Color, ast.Meta.Color)
 	diags := pylon.Validate(ast)
 	for _, d := range diags {
 		emitDiagnostic(os.Stderr, displayPath(cli.Input), d)
@@ -160,32 +160,34 @@ func writeOutputBytes(path string, payload []byte) error {
 }
 
 // resolveColor converts the `--color=auto|always|never` flag into the
-// boolean that ends up on Meta.ColorEnabled. Auto-mode is
-// permissive-but-safe — it returns true on any interactive terminal
-// that hasn't explicitly opted out:
-//   - NO_COLOR is unset (https://no-color.org),
-//   - stdout is a character device (pipes / files get no colour so
-//     redirected output stays plain).
+// boolean that ends up on Meta.ColorEnabled, with the source file's
+// `color:` frontmatter key as a middle-priority override:
 //
-// `COLORTERM=truecolor|24bit` is checked as a positive signal — if
-// the env var is set to one of those values we short-circuit the
-// TTY test. This covers nohup / tmux-outer-pipe cases where the
-// isatty check would fail but the user clearly wants color. It is
-// NOT required: most modern terminals (iTerm, Alacritty, Kitty,
-// macOS Terminal, Windows Terminal, GNOME Terminal) handle 24-bit
-// SGR cleanly whether or not they advertise COLORTERM. Forcing the
-// env var requirement would mean shipping a "colorless by default"
-// experience for the majority of users, which defeats the point.
+//  1. `--color=always` / `--color=never` — highest priority, deterministic
+//     switch for CI and scripted callers.
+//  2. `color: true|false` in frontmatter — the source file's preference,
+//     honored under `--color=auto` so a chart author can say "this one
+//     needs color" (or "this one is plain on purpose") without asking
+//     every reader to pass the right flag.
+//  3. Auto-mode heuristics — permissive-but-safe: `NO_COLOR` unset,
+//     stdout is a character device. `COLORTERM=truecolor|24bit` is a
+//     positive signal that short-circuits the TTY test for nohup /
+//     tmux-outer-pipe cases.
 //
-// `always` and `never` force the flag regardless of environment so
-// CI and scripted callers have a deterministic switch.
-func resolveColor(mode string) bool {
+// `theme: ascii` is NOT consulted here — that check lives inside the
+// renderers themselves (`bc == asciiBox` force-suppresses color on
+// every primitive), so the ASCII theme wins even against --color=always
+// no matter how the flag landed.
+func resolveColor(mode string, fmPref *bool) bool {
 	switch mode {
 	case "always":
 		return true
 	case "never":
 		return false
 	default:
+		if fmPref != nil {
+			return *fmPref
+		}
 		if os.Getenv("NO_COLOR") != "" {
 			return false
 		}
