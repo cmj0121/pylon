@@ -815,7 +815,7 @@
   //  - natural-pad  3 cells on each side of content in a bordered box
   //  - cell -> px   10 wide, 20 tall for SVG / PNG
   const NATURAL_PAD = 3;
-  const TIGHT_CHART_PAD = 0;
+  const TIGHT_CHART_PAD = 1;
   const CELL_PX_W = 5;
   const CELL_PX_H = 13;
 

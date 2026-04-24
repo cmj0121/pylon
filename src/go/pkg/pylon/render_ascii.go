@@ -55,7 +55,7 @@ func RenderRows(ast *Box) []string {
 
 const (
 	naturalPad    = 3
-	tightChartPad = 0
+	tightChartPad = 1
 )
 
 // isTightChartBox reports whether a chart-primitive box should render

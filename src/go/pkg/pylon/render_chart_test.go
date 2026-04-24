@@ -39,11 +39,11 @@ func TestRenderHBar_Basic(t *testing.T) {
 	src := "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n  - x: 3\n    y: 15\n---\n[ @data | bar ]"
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"┌───────────────────┐",
-		"│1 │ █████      (10)│",
-		"│2 │ ██████████ (20)│",
-		"│3 │ ████████   (15)│",
-		"└───────────────────┘",
+		"┌─────────────────────┐",
+		"│ 1 │ █████      (10) │",
+		"│ 2 │ ██████████ (20) │",
+		"│ 3 │ ████████   (15) │",
+		"└─────────────────────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("hbar SPEC example mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -105,20 +105,20 @@ func TestRenderVBar_Basic(t *testing.T) {
 	src := "---\ndata:\n  - x: 1\n    y: 10\n  - x: 2\n    y: 20\n  - x: 3\n    y: 15\n---\n[ @data | vbar ]"
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"┌────────────┐",
-		"│     █      │",
-		"│     █      │",
-		"│     █   █  │",
-		"│     █   █  │",
-		"│     █   █  │",
-		"│ █   █   █  │",
-		"│ █   █   █  │",
-		"│ █   █   █  │",
-		"│ █   █   █  │",
-		"│ █   █   █  │",
-		"│ 1   2   3  │",
-		"│(10)(20)(15)│",
-		"└────────────┘",
+		"┌──────────────┐",
+		"│      █       │",
+		"│      █       │",
+		"│      █   █   │",
+		"│      █   █   │",
+		"│      █   █   │",
+		"│  █   █   █   │",
+		"│  █   █   █   │",
+		"│  █   █   █   │",
+		"│  █   █   █   │",
+		"│  █   █   █   │",
+		"│  1   2   3   │",
+		"│ (10)(20)(15) │",
+		"└──────────────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("vbar SPEC example mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -174,9 +174,9 @@ func TestRenderChart_UnknownRenderer(t *testing.T) {
 func TestRenderProgress_Scalar(t *testing.T) {
 	got := RenderASCII(Parse("[ 75 | progress ]"))
 	want := strings.Join([]string{
-		"┌─────────────────────────┐",
-		"│███████████████░░░░░  75%│",
-		"└─────────────────────────┘",
+		"┌───────────────────────────┐",
+		"│ ███████████████░░░░░  75% │",
+		"└───────────────────────────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("progress scalar mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -266,9 +266,9 @@ func TestRenderSparkline_Basic(t *testing.T) {
 	}, "\n")
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"┌────────┐",
-		"│▁▂▃▄▅▆▇█│",
-		"└────────┘",
+		"┌──────────┐",
+		"│ ▁▂▃▄▅▆▇█ │",
+		"└──────────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("sparkline mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -353,17 +353,17 @@ func TestRenderCandlestick_Basic(t *testing.T) {
 	}, "\n")
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"┌───────────────┐",
-		"│      │        │",
-		"│      ▒  █     │",
-		"││     ▒  █     │",
-		"│▒  █  ▒  █  ▒  │",
-		"│▒  █  ▒  █  ▒  │",
-		"│▒  █  ▒        │",
-		"││  │           │",
-		"││              │",
-		"│MonTueWedThuFri│",
-		"└───────────────┘",
+		"┌─────────────────┐",
+		"│       │         │",
+		"│       ▒  █      │",
+		"│ │     ▒  █      │",
+		"│ ▒  █  ▒  █  ▒   │",
+		"│ ▒  █  ▒  █  ▒   │",
+		"│ ▒  █  ▒         │",
+		"│ │  │            │",
+		"│ │               │",
+		"│ MonTueWedThuFri │",
+		"└─────────────────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("candlestick basic mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -493,17 +493,17 @@ func TestRenderCandlestick_ASCII(t *testing.T) {
 	}, "\n")
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"+---------------+",
-		"|      |        |",
-		"|      +  #     |",
-		"||     +  #     |",
-		"|+  #  +  #  +  |",
-		"|+  #  +  #  +  |",
-		"|+  #  +        |",
-		"||  |           |",
-		"||              |",
-		"|MonTueWedThuFri|",
-		"+---------------+",
+		"+-----------------+",
+		"|       |         |",
+		"|       +  #      |",
+		"| |     +  #      |",
+		"| +  #  +  #  +   |",
+		"| +  #  +  #  +   |",
+		"| +  #  +         |",
+		"| |  |            |",
+		"| |               |",
+		"| MonTueWedThuFri |",
+		"+-----------------+",
 	}, "\n")
 	if got != want {
 		t.Errorf("candlestick ASCII theme mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -529,17 +529,17 @@ func TestRenderHist_Basic(t *testing.T) {
 	}, "\n")
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"┌───┐",
-		"│  █│",
-		"│  █│",
-		"│  █│",
-		"│ ██│",
-		"│ ██│",
-		"│ ██│",
-		"│███│",
-		"│███│",
-		"│abc│",
-		"└───┘",
+		"┌─────┐",
+		"│   █ │",
+		"│   █ │",
+		"│   █ │",
+		"│  ██ │",
+		"│  ██ │",
+		"│  ██ │",
+		"│ ███ │",
+		"│ ███ │",
+		"│ abc │",
+		"└─────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("hist basic mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
@@ -621,11 +621,11 @@ func TestRenderGantt_Basic(t *testing.T) {
 	}, "\n")
 	got := RenderASCII(Parse(src))
 	want := strings.Join([]string{
-		"┌──────────────────────────┐",
-		"│ spec ████████            │",
-		"│build     ████████████    │",
-		"│ test             ████████│",
-		"└──────────────────────────┘",
+		"┌────────────────────────────┐",
+		"│  spec ████████             │",
+		"│ build     ████████████     │",
+		"│  test             ████████ │",
+		"└────────────────────────────┘",
 	}, "\n")
 	if got != want {
 		t.Errorf("gantt basic mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
