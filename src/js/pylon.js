@@ -816,8 +816,8 @@
   //  - cell -> px   10 wide, 20 tall for SVG / PNG
   const NATURAL_PAD = 3;
   const TIGHT_CHART_PAD = 0;
-  const CELL_PX_W = 10;
-  const CELL_PX_H = 20;
+  const CELL_PX_W = 7;
+  const CELL_PX_H = 16;
 
   // isTightChartBox reports whether a chart-primitive box should
   // render with zero inner padding instead of the default 3-cell pad.

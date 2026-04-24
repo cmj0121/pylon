@@ -24,13 +24,13 @@ import (
 var jetBrainsMonoRegular []byte
 
 // PNG render constants. Font size and DPI are chosen so the resulting
-// cell width roughly matches the SVG renderer's 10x18 cell — JetBrains
-// Mono at 14pt / 72 DPI gives an advance width near 8-9 px, which we
-// round up for consistent padding.
+// cell width matches the SVG renderer's 7x16 cell — JetBrains Mono at
+// 10pt / 72 DPI gives an advance width near 6-7 px, the tight grid
+// that kept chart primitives from looking spacious in raster output.
 const (
-	pngFontSize = 14.0
+	pngFontSize = 10.0
 	pngDPI      = 72.0
-	pngPadding  = 6
+	pngPadding  = 4
 )
 
 // pngThemeColors returns the background and foreground RGBA for the

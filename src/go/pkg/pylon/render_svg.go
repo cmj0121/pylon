@@ -5,13 +5,14 @@ import (
 	"strings"
 )
 
-// SVG cell geometry. 10px wide / 18px tall approximates a Cascadia-class
-// monospace font at 14px in browsers. Fonts with different metrics will
+// SVG cell geometry. 7px wide / 16px tall is a tighter Cascadia-class
+// monospace that packs chart rows together without the 30% inter-cell
+// whitespace that a 10x18 cell gave. Fonts with different metrics
 // have minor drift, but the values give a reasonable default viewBox.
 const (
-	svgCellW  = 10
-	svgCellH  = 18
-	svgFontPx = 14
+	svgCellW  = 7
+	svgCellH  = 16
+	svgFontPx = 13
 )
 
 // Theme color palette. Matches the `--pylon-ink` custom property from
