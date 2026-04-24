@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 39" width="65" height="39">
 <style>text { font-family: "Cascadia Code", "JetBrains Mono", "Iosevka", ui-monospace, Menlo, Consolas, monospace; font-size: 10px; fill: #0f1c2d; white-space: pre; }</style>
-<text x="0" y="10" xml:space="preserve">+-----------+</text>
-<text x="0" y="23" xml:space="preserve">|   Hello   |</text>
-<text x="0" y="36" xml:space="preserve">+-----------+</text>
+<text x="0" y="10" textLength="65" lengthAdjust="spacingAndGlyphs" xml:space="preserve">+-----------+</text>
+<text x="0" y="23" textLength="65" lengthAdjust="spacingAndGlyphs" xml:space="preserve">|   Hello   |</text>
+<text x="0" y="36" textLength="65" lengthAdjust="spacingAndGlyphs" xml:space="preserve">+-----------+</text>
 </svg>

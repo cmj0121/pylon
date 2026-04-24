@@ -98,6 +98,16 @@ func RenderSVG(ast *Box) string {
 // of font characters whose antialiasing differs by renderer. Every
 // other cell is emitted as a <text> segment at its natural position.
 //
+// Each text segment carries textLength=cells*svgCellW and
+// lengthAdjust="spacingAndGlyphs" so the browser compresses (or
+// stretches) the glyph run to fit exactly the cell grid. Without
+// this the text's natural advance drifts away from svgCellW — a
+// 10px Cascadia renders at ~6px per char, while cells are 5px — so
+// over a wide row text characters walk right and overlap the
+// adjacent <rect>s. `lengthAdjust="spacingAndGlyphs"` tells the
+// browser it can scale both the inter-char spacing and the glyphs
+// themselves; without it the attribute is a no-op on some renderers.
+//
 // yTop is the top y-pixel of the row; baseline is the text baseline
 // (already nudged for cellH/fontPx alignment); fill is the resolved
 // theme ink color used both for text and for rect fill.
@@ -113,8 +123,8 @@ func emitSVGRow(b *strings.Builder, row string, yTop, baseline int, fill string)
 			return
 		}
 		fmt.Fprintf(b,
-			`<text x="%d" y="%d" xml:space="preserve">%s</text>`,
-			start*svgCellW, baseline, escapeXML(seg))
+			`<text x="%d" y="%d" textLength="%d" lengthAdjust="spacingAndGlyphs" xml:space="preserve">%s</text>`,
+			start*svgCellW, baseline, (end-start)*svgCellW, escapeXML(seg))
 		b.WriteByte('\n')
 	}
 	textStart := 0

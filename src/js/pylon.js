@@ -2637,6 +2637,13 @@
       t.setAttribute("dominant-baseline", "middle");
       t.setAttribute("font-family", "monospace");
       t.setAttribute("font-size", FONT_SIZE_PX);
+      // textLength + lengthAdjust pin this segment to the cell grid
+      // so text glyphs don't drift rightward and overlap the next
+      // <rect>. Cascadia's natural advance at 10px is ~6px while
+      // CELL_PX_W is 5; without this the mismatch accumulates across
+      // the row.
+      t.setAttribute("textLength", (end - start) * CELL_PX_W);
+      t.setAttribute("lengthAdjust", "spacingAndGlyphs");
       t.setAttribute("style", "white-space: pre");
       t.setAttribute("xml:space", "preserve");
       t.setAttribute("fill", "currentColor");
