@@ -277,7 +277,7 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships eight renderers. Unknown names surface an inline
+Pylon 0.2.0 ships eleven renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
 | Renderer       | Input                       | Output                                                          |
@@ -290,6 +290,9 @@ Pylon 0.2.0 ships eight renderers. Unknown names surface an inline
 | `heatmap`      | `@ref` → `[{x, y:[n,...]}]` | 2D matrix of ramp glyphs (`░▒▓█` / `.+*#`).                     |
 | `sparkline`    | `@ref` → `[{x,y}]`          | Single-row ramp; 8 levels default / 4 levels ascii.             |
 | `candlestick`  | `@ref` → `[{x,o,h,l,c}]`    | Fixed 8-row OHLC candles with bull/bear/doji bodies and wicks.  |
+| `hist`         | `@ref` → `[{x,y}]`          | Gap-less 8-row histogram bars; bar-family validators.           |
+| `step`         | `@ref` → `[{x,y}]`          | 5-row cumulative step line with box-drawing corner connectors.  |
+| `gantt`        | `@ref` → `[{x,start,end}]`  | Horizontal task bars on a shared budget; size-aware.            |
 
 `bar` is a v0.1 alias for `hbar`; both render identically.
 
@@ -664,6 +667,165 @@ reports `candlestick: empty series`; and an entry where
 `h < max(o, c)` or `l > min(o, c)` reports
 `candlestick: invalid ohlc`.
 
+### hist
+
+```pylon
+---
+data:
+  letters:
+    - x: M
+      y: 1
+    - x: I
+      y: 4
+    - x: S
+      y: 4
+    - x: P
+      y: 2
+---
+[ @letters | hist ]
+```
+
+```txt
+┌──────────┐
+│    ██    │
+│    ██    │
+│    ██    │
+│    ██    │
+│    ███   │
+│    ███   │
+│   ████   │
+│   ████   │
+│   MISP   │
+└──────────┘
+```
+
+`hist` accepts an `@ref` pointing to `[{x,y}]` where `y` is a
+non-negative pre-binned count. Bars draw on a fixed 8-row grid,
+one column per entry, **width 1 with no gaps** — this is what
+distinguishes `hist` from `vbar`, which pads columns and feet
+with whitespace. An x-label footer appears when any entry has a
+non-empty `x`; when every `x` is empty the footer drops and the
+chart packs into a compact, label-free mode.
+
+Normalization is `cells = round(y / max(y) * 8)`, so the tallest
+bar always fills the full 8 rows. A zero-max series degenerates
+to a flat empty chart — deterministic rather than
+division-by-zero. Glyphs are `█` by default and `#` under
+`theme: ascii` (bar-family glyph set).
+
+Validation reuses the bar-family validators: shape problems
+surface `⚠ hist: expected [{x,y}]`, an empty series reports
+`hist: empty series`, any negative `y` reports
+`hist: negative y`, and duplicate `x` reports
+`hist: duplicate x "…"`. No new diagnostic codes.
+
+### step
+
+```pylon
+---
+data:
+  signups:
+    - x: w1
+      y: 5
+    - x: w2
+      y: 12
+    - x: w3
+      y: 14
+    - x: w4
+      y: 25
+    - x: w5
+      y: 40
+    - x: w6
+      y: 55
+---
+[ @signups | step ]
+```
+
+```txt
+┌─────────────────┐
+│            ┌─   │
+│          ┌─┘    │
+│        ┌─┘      │
+│    ┌───┘        │
+│   ─┘            │
+└─────────────────┘
+```
+
+`step` accepts an `@ref` pointing to `[{x,y}]` and renders a
+fixed 5-row step chart — one horizontal segment per entry,
+connected by box-drawing corners where values change. Each
+entry occupies **two columns**: the flat level of that entry
+draws as `─`, and transitions between levels use `┌ ┐ └ ┘` to
+turn, with `│` filling multi-row vertical runs. Under
+`theme: ascii` the glyphs fold to `- |` with `+` at every
+corner.
+
+Normalization is **global** across the series: `row(y) = (H-1)
+
+- round((y - gMin) / (gMax - gMin) \* (H-1))`with`H = 5`, so
+`gMin`pins the bottom row and`gMax`pins the top. A flat
+series (`gMin == gMax`) collapses to a single horizontal line
+  along the bottom row — deterministic rather than
+  division-by-zero.
+
+Like sparkline, step **tolerates negative `y` and duplicate
+`x`** — cumulative counters that reset, signed deltas, and
+repeated x-bins are all normal. Shape problems surface
+`⚠ step: expected [{x,y}]` and an empty series reports
+`step: empty series` — no new diagnostic codes.
+
+### gantt
+
+```pylon
+---
+data:
+  sprint:
+    - x: spec
+      start: 0
+      end: 5
+    - x: code
+      start: 3
+      end: 12
+    - x: test
+      start: 10
+      end: 16
+    - x: ship
+      start: 14
+      end: 20
+---
+[ @sprint | gantt ]
+```
+
+```txt
+┌───────────────────────────────┐
+│   spec █████                  │
+│   code    █████████           │
+│   test           ██████       │
+│   ship               ██████   │
+└───────────────────────────────┘
+```
+
+`gantt` accepts an `@ref` pointing to `[{x, start, end}]` —
+one task per row, with `x` as the task label and `start` /
+`end` as finite numeric offsets on a shared horizontal budget.
+Labels render right-aligned in a left-hand column, and each
+task's bar spans `start..end-1` across the budget. Glyphs are
+`█` by default and `#` under `theme: ascii`.
+
+The budget is **20 cells by default**. When the frontmatter
+declares `size: W x H`, the budget retunes to
+`max(5, W - labelWidth - 4)`, so a tighter `size:` squeezes the
+bars rather than truncating labels. The floor of 5 cells keeps
+short-label charts readable even at aggressive widths.
+
+Shape problems (missing field, non-numeric `start` / `end`)
+surface `⚠ gantt: expected [{x, start, end}]`, reusing the
+`bar.shape` class. An empty series reports `gantt: empty series`
+(reusing `bar.empty`). A task with `start < 0` or `end < start`
+reports `gantt: invalid range` — a new code, `gantt.range`,
+because a negative or inverted interval is a data error that
+no other renderer models.
+
 ## Error model
 
 Pylon surfaces errors through two channels.
@@ -679,18 +841,19 @@ Pylon surfaces errors through two channels.
 
 ### Render-time error catalogue
 
-| Trigger                                               | Inline message               |
-| ----------------------------------------------------- | ---------------------------- |
-| Raw string piped to non-`text`                        | `bar: use @ref`              |
-| Unknown renderer name                                 | `unknown renderer: foo`      |
-| `@ref` not declared in frontmatter                    | `@missing not found`         |
-| Bare `@ref` with no renderer                          | `@name: requires a renderer` |
-| Renderer got wrong shape                              | `hbar: expected [{x,y}]`     |
-| Empty series for a bar renderer                       | `hbar: empty series`         |
-| Any negative `y`                                      | `hbar: negative y`           |
-| Duplicate `x` in series                               | `hbar: duplicate x "a"`      |
-| Non-numeric scalar in `\| progress`                   | `progress: expected number`  |
-| OHLC inconsistency (`h < max(o,c)` or `l > min(o,c)`) | `candlestick: invalid ohlc`  |
+| Trigger                                                  | Inline message               |
+| -------------------------------------------------------- | ---------------------------- |
+| Raw string piped to non-`text`                           | `bar: use @ref`              |
+| Unknown renderer name                                    | `unknown renderer: foo`      |
+| `@ref` not declared in frontmatter                       | `@missing not found`         |
+| Bare `@ref` with no renderer                             | `@name: requires a renderer` |
+| Renderer got wrong shape                                 | `hbar: expected [{x,y}]`     |
+| Empty series for a bar renderer                          | `hbar: empty series`         |
+| Any negative `y`                                         | `hbar: negative y`           |
+| Duplicate `x` in series                                  | `hbar: duplicate x "a"`      |
+| Non-numeric scalar in `\| progress`                      | `progress: expected number`  |
+| OHLC inconsistency (`h < max(o,c)` or `l > min(o,c)`)    | `candlestick: invalid ohlc`  |
+| Gantt range inconsistency (`start < 0` or `end < start`) | `gantt: invalid range`       |
 
 Bar-family errors (shape / empty / negative-y / duplicate-x) carry
 the actually-invoked renderer name: `hbar:` or `vbar:`. `bar` is an

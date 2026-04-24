@@ -115,7 +115,7 @@ legend from a previous response stay correct across upgrades.
 
 ## Error-model mapping
 
-Every diagnostic the server emits maps to one of 14 stable codes.
+Every diagnostic the server emits maps to one of 15 stable codes.
 Wording is byte-identical to [`src/js/pylon.js`](../src/js/pylon.js)
 so the `parity-diagnostics` CI gate can diff outputs directly.
 
@@ -146,6 +146,7 @@ prefix, so wire text for the first row is literally
 | `progress.not_number`    | `progress: expected number`          | `\| progress` over a non-numeric scalar        |
 | `heatmap.shape`          | `heatmap: expected [{x, y:[n,...]}]` | `\| heatmap` series isn't the 2D shape         |
 | `candlestick.ohlc`       | `candlestick: invalid ohlc`          | Entry breaks `h >= max(o,c)` / `l <= min(o,c)` |
+| `gantt.range`            | `gantt: invalid range`               | Entry has `start < 0` or `end < start`         |
 
 The `bar` alias dispatches through the horizontal-bar renderer but
 threads the literal renderer name into diagnostics — `[ hello | bar ]`

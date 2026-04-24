@@ -1,0 +1,17 @@
+---
+data:
+  signups:
+    - x: w1
+      y: 5
+    - x: w2
+      y: 12
+    - x: w3
+      y: 14
+    - x: w4
+      y: 25
+    - x: w5
+      y: 40
+    - x: w6
+      y: 55
+---
+[ @signups | step ]
