@@ -983,19 +983,38 @@ func padRow(row string, targetW int, align string, minPad int) string {
 	return strings.Repeat(" ", minPad) + row + strings.Repeat(" ", slack-minPad)
 }
 
+// clipRow truncates row to targetW display cells, preserving any
+// in-band SGR sequences (24-bit colour and friends) verbatim with
+// zero width. The builder emits the SGR bytes regardless of whether
+// targetW has been reached, so trailing runes stay coloured after a
+// clip and any pending resets make it into the output.
 func clipRow(row string, targetW int) string {
 	if displayWidth(row) <= targetW {
 		return row
 	}
+	runes := []rune(row)
 	w := 0
 	var b strings.Builder
-	for _, r := range row {
-		cw := runeWidth(r)
+	b.Grow(len(row))
+	for i := 0; i < len(runes); {
+		if runes[i] == 0x1b {
+			j := skipSGR(runes, i)
+			if j > i {
+				// Emit the SGR sequence verbatim; counts 0 width.
+				for k := i; k < j; k++ {
+					b.WriteRune(runes[k])
+				}
+				i = j
+				continue
+			}
+		}
+		cw := runeWidth(runes[i])
 		if w+cw > targetW {
 			break
 		}
-		b.WriteRune(r)
+		b.WriteRune(runes[i])
 		w += cw
+		i++
 	}
 	return b.String()
 }
@@ -1020,11 +1039,31 @@ func vertPad(rows []string, targetH, contentW int) []string {
 }
 
 // displayWidth counts terminal/monospace cells for a string. CJK /
-// wide ranges count as 2, ZWJ / combining runes count as 0.
+// wide ranges count as 2, ZWJ / combining runes count as 0. Inline
+// SGR escape sequences (e.g. 24-bit colour introduced by wrapANSI)
+// are recognised and skipped so layout math stays correct whether
+// colour is on or off.
 func displayWidth(s string) int {
+	// Hot-path: no ESC in the string, fall back to the plain loop.
+	if !strings.ContainsRune(s, 0x1b) {
+		w := 0
+		for _, r := range s {
+			w += runeWidth(r)
+		}
+		return w
+	}
+	runes := []rune(s)
 	w := 0
-	for _, r := range s {
-		w += runeWidth(r)
+	for i := 0; i < len(runes); {
+		if runes[i] == 0x1b {
+			j := skipSGR(runes, i)
+			if j > i {
+				i = j
+				continue
+			}
+		}
+		w += runeWidth(runes[i])
+		i++
 	}
 	return w
 }

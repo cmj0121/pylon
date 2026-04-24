@@ -170,6 +170,13 @@ type Meta struct {
 	// = offset past last byte of that line). Zero Span when no `data:`
 	// block appeared.
 	DataSpan Span
+
+	// ColorEnabled toggles ANSI 24-bit color emission during ASCII
+	// rendering. Off by default so unit tests and non-tty callers see
+	// plain output. The CLI resolves `--color=auto|always|never` into
+	// this flag before invoking any renderer. No package-level mutable
+	// state carries the color toggle — it rides on the AST root.
+	ColorEnabled bool
 }
 
 // MetaError is a single frontmatter parse error with the source span

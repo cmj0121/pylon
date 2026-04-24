@@ -30,6 +30,7 @@ type CLI struct {
 	Input   string           `kong:"arg,optional,type='existingfile',help='input file; stdin when omitted'"`
 	Verbose int              `kong:"short='v',type='counter',help='verbose; repeat for debug (-vv)'"`
 	Strict  bool             `kong:"help='exit non-zero when any diagnostic is emitted (for CI gating)'"`
+	Color   string           `kong:"enum='auto,always,never',default='auto',help='when to emit ANSI color escapes'"`
 	Version kong.VersionFlag `kong:"help='show version and exit'"`
 }
 
@@ -51,6 +52,7 @@ func main() {
 	}
 
 	ast := pylon.Parse(src)
+	ast.Meta.ColorEnabled = resolveColor(cli.Color)
 	diags := pylon.Validate(ast)
 	for _, d := range diags {
 		emitDiagnostic(os.Stderr, displayPath(cli.Input), d)
@@ -155,4 +157,37 @@ func writeOutputBytes(path string, payload []byte) error {
 		return err
 	}
 	return os.WriteFile(path, payload, 0o644)
+}
+
+// resolveColor converts the `--color=auto|always|never` flag into the
+// boolean that ends up on Meta.ColorEnabled. Auto-mode is
+// intentionally conservative — it only returns true when:
+//   - NO_COLOR is unset (https://no-color.org),
+//   - COLORTERM is set to `truecolor` or `24bit` (terminals that
+//     declare 24-bit support — otherwise our SGR bytes show up as
+//     literal garbage in terminals that don't parse them),
+//   - stdout is a character device (pipes / files get no colour).
+//
+// `always` and `never` force the flag regardless of environment so
+// CI and scripted callers have a deterministic switch.
+func resolveColor(mode string) bool {
+	switch mode {
+	case "always":
+		return true
+	case "never":
+		return false
+	default:
+		if os.Getenv("NO_COLOR") != "" {
+			return false
+		}
+		ct := os.Getenv("COLORTERM")
+		if ct != "truecolor" && ct != "24bit" {
+			return false
+		}
+		stat, err := os.Stdout.Stat()
+		if err != nil {
+			return false
+		}
+		return stat.Mode()&os.ModeCharDevice != 0
+	}
 }
