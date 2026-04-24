@@ -59,6 +59,12 @@ func pngThemeColors(theme string) (bg, fg color.RGBA) {
 // Returns the encoded PNG bytes. The caller is responsible for writing
 // them to the intended sink (stdout / file / buffer).
 func RenderPNG(ast *Box) ([]byte, error) {
+	// ANSI colour is terminal-only. PNG has its own colour path
+	// (paintBlockRuns blends RGBA rectangles). Force ColorEnabled
+	// off so `wrapANSI` becomes a no-op and no SGR escape sequence
+	// leaks into the rendered rows — otherwise the font-drawing
+	// pass would rasterise `[38;2;…m` as literal letter glyphs.
+	ast.Meta.ColorEnabled = false
 	rows := RenderRows(ast)
 	if len(rows) == 0 {
 		rows = []string{""}
