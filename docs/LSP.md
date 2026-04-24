@@ -115,7 +115,7 @@ legend from a previous response stay correct across upgrades.
 
 ## Error-model mapping
 
-Every diagnostic the server emits maps to one of 11 stable codes.
+Every diagnostic the server emits maps to one of 14 stable codes.
 Wording is byte-identical to [`src/js/pylon.js`](../src/js/pylon.js)
 so the `parity-diagnostics` CI gate can diff outputs directly.
 
@@ -133,16 +133,19 @@ a space; the `Message` column below lists the portion after that
 prefix, so wire text for the first row is literally
 `"⚠ unknown renderer: NAME"`.
 
-| `Code`                   | Message                       | Trigger                                     |
-| ------------------------ | ----------------------------- | ------------------------------------------- |
-| `renderer.unknown`       | `unknown renderer: NAME`      | `\| NAME` not in `text`/`hbar`/`vbar`/`bar` |
-| `renderer.use_at_ref`    | `NAME: use @ref`              | Non-`text` renderer handed raw text         |
-| `renderer.bare_data_ref` | `@NAME: requires \| renderer` | `@NAME` in box body with no `\| renderer`   |
-| `data.not_found`         | `@NAME not found`             | `@NAME` unresolved against `data:`          |
-| `bar.shape`              | `NAME: expected [{x,y}]`      | Bar-family series isn't `[{x,y}]`           |
-| `bar.empty`              | `NAME: empty series`          | Bar-family series has zero entries          |
-| `bar.negative_y`         | `NAME: negative y`            | Bar-family entry has `y < 0`                |
-| `bar.duplicate_x`        | `NAME: duplicate x "X"`       | Two bar-family entries share `x`            |
+| `Code`                   | Message                              | Trigger                                        |
+| ------------------------ | ------------------------------------ | ---------------------------------------------- |
+| `renderer.unknown`       | `unknown renderer: NAME`             | `\| NAME` not in `text`/`hbar`/`vbar`/`bar`    |
+| `renderer.use_at_ref`    | `NAME: use @ref`                     | Non-`text` renderer handed raw text            |
+| `renderer.bare_data_ref` | `@NAME: requires \| renderer`        | `@NAME` in box body with no `\| renderer`      |
+| `data.not_found`         | `@NAME not found`                    | `@NAME` unresolved against `data:`             |
+| `bar.shape`              | `NAME: expected [{x,y}]`             | Bar-family series isn't `[{x,y}]`              |
+| `bar.empty`              | `NAME: empty series`                 | Bar-family series has zero entries             |
+| `bar.negative_y`         | `NAME: negative y`                   | Bar-family entry has `y < 0`                   |
+| `bar.duplicate_x`        | `NAME: duplicate x "X"`              | Two bar-family entries share `x`               |
+| `progress.not_number`    | `progress: expected number`          | `\| progress` over a non-numeric scalar        |
+| `heatmap.shape`          | `heatmap: expected [{x, y:[n,...]}]` | `\| heatmap` series isn't the 2D shape         |
+| `candlestick.ohlc`       | `candlestick: invalid ohlc`          | Entry breaks `h >= max(o,c)` / `l <= min(o,c)` |
 
 The `bar` alias dispatches through the horizontal-bar renderer but
 threads the literal renderer name into diagnostics — `[ hello | bar ]`
