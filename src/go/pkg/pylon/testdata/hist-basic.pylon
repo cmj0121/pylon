@@ -1,0 +1,15 @@
+---
+data:
+  hits:
+    - x: a
+      y: 1
+    - x: b
+      y: 3
+    - x: c
+      y: 5
+    - x: d
+      y: 4
+    - x: e
+      y: 2
+---
+[ @hits | hist ]

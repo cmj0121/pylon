@@ -31,6 +31,7 @@ const (
 	CodeProgressNotNumber Code = "progress.not_number"  // `| progress` over a scalar body that doesn't parse as a number
 	CodeHeatmapShape    Code = "heatmap.shape"           // `| heatmap` series doesn't match `[{x, y:[n,...]}]` (covers ragged/non-numeric/non-array y)
 	CodeCandlestickOHLC Code = "candlestick.ohlc"         // `| candlestick` entry breaks h >= max(o,c) / l <= min(o,c)
+	CodeGanttRange      Code = "gantt.range"              // `| gantt` entry has start < 0 or end < start
 )
 
 // Diagnostic is one complaint about the source. Message text matches

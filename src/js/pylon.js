@@ -1497,6 +1497,223 @@
     }
     return rows;
   };
+  // Histogram. Bar-family shape (`[{x,y}]`); fixed 8-row canvas; zero
+  // gap between columns. Footer row of centred x labels only when at
+  // least one x is non-empty. Glyphs mirror the bar family so the ASCII
+  // theme collapses to `#`. Constants mirror src/go/pkg/pylon/
+  // render_hist.go so the two sides stay byte-identical.
+  const HIST_HEIGHT_DEFAULT = 8;
+
+  const histGlyph = (bc) => (bc === ASCII_BOX ? "#" : BAR_GLYPH);
+
+  // renderHist lays out N columns of fixed height H. Cell count per bar
+  // is `round(y / maxY * H)`; `maxY === 0` collapses every column to
+  // zero cells (blank canvas, no crash). Column width is 1 for an
+  // all-empty label set, otherwise `max(displayWidth(x), 1)` with the
+  // label centred under the bar.
+  const renderHist = (series, bc) => {
+    const glyph = histGlyph(bc);
+    const H = HIST_HEIGHT_DEFAULT;
+    const labels = series.map((e) => String(e.x));
+    const hasLabel = labels.some((l) => l !== "");
+    const colW = labels.map((l) =>
+      hasLabel ? Math.max(displayWidth(l), 1) : 1,
+    );
+    let maxY = 0;
+    for (const e of series) if (e.y > maxY) maxY = e.y;
+    const cells = series.map((e) =>
+      maxY === 0 ? 0 : Math.round((e.y / maxY) * H),
+    );
+    const rows = [];
+    for (let r = 0; r < H; r++) {
+      const fromBottom = H - r; // 1-based distance from baseline
+      let line = "";
+      for (let i = 0; i < series.length; i++) {
+        const g = cells[i] >= fromBottom ? glyph : " ";
+        line += padRow(g, colW[i], "center", 0);
+      }
+      rows.push(line);
+    }
+    if (hasLabel) {
+      rows.push(labels.map((l, i) => padRow(l, colW[i], "center", 0)).join(""));
+    }
+    return rows;
+  };
+
+  // Step line. Fixed 5-row canvas; each entry consumes two columns (a
+  // horizontal cell at row(y_i) plus a transition cell); grid width is
+  // 2n-1. No footer. Glyphs swap to `-`/`|`/`+` under the ASCII theme.
+  // Constants mirror src/go/pkg/pylon/render_step.go.
+  const STEP_HEIGHT_DEFAULT = 5;
+  const STEP_GLYPHS_DEFAULT = {
+    h: "─",
+    v: "│",
+    tl: "┌",
+    tr: "┐",
+    bl: "└",
+    br: "┘",
+  };
+  const STEP_GLYPHS_ASCII = {
+    h: "-",
+    v: "|",
+    tl: "+",
+    tr: "+",
+    bl: "+",
+    br: "+",
+  };
+
+  const stepGlyphs = (bc) =>
+    bc === ASCII_BOX ? STEP_GLYPHS_ASCII : STEP_GLYPHS_DEFAULT;
+
+  // validateHistSeries mirrors validateBarSeries except empty-x values
+  // aren't fed into the duplicate-x set -- an empty x is "no label for
+  // this column", not a literal label whose repeated value collides.
+  // That lets compact-mode fixtures (every entry carries `x: ""`) stack
+  // multiple bars without tripping `bar.duplicate_x`. Non-empty x
+  // duplicates and negative y still fire with the `hist:` prefix.
+  const validateHistSeries = (refValue) => {
+    if (!Array.isArray(refValue)) return [`⚠ hist: expected [{x,y}]`];
+    if (refValue.length === 0) return [`⚠ hist: empty series`];
+    const seenX = new Set();
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") {
+        return [`⚠ hist: expected [{x,y}]`];
+      }
+      if (!("x" in entry) || !("y" in entry)) {
+        return [`⚠ hist: expected [{x,y}]`];
+      }
+      if (typeof entry.y !== "number" || Number.isNaN(entry.y)) {
+        return [`⚠ hist: expected [{x,y}]`];
+      }
+      if (entry.y < 0) return [`⚠ hist: negative y`];
+      const xKey = String(entry.x);
+      if (xKey === "") continue;
+      if (seenX.has(xKey)) {
+        return [`⚠ hist: duplicate x "${xKey}"`];
+      }
+      seenX.add(xKey);
+    }
+    return null;
+  };
+
+  // validateStepSeries mirrors validateSparklineSeries: shape + empty
+  // only. Negative y and duplicate x are deliberately tolerated -- step
+  // is a trend-shape viz over an ordered sequence.
+  const validateStepSeries = (refValue) => {
+    const shape = () => [`⚠ step: expected [{x,y}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ step: empty series`];
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") return shape();
+      if (!("x" in entry) || !("y" in entry)) return shape();
+      if (typeof entry.y !== "number" || Number.isNaN(entry.y)) return shape();
+    }
+    return null;
+  };
+
+  // renderStep lays the cumulative shape on a fixed-height grid. Row 0
+  // is the top; higher y maps to a lower row index. For a flat series
+  // (gMin === gMax) every entry pins to the bottom row, which surfaces
+  // as a single horizontal line of length 2n-1.
+  const renderStep = (series, bc) => {
+    const g = stepGlyphs(bc);
+    const H = STEP_HEIGHT_DEFAULT;
+    const n = series.length;
+    const W = 2 * n - 1;
+    let gMin = series[0].y;
+    let gMax = series[0].y;
+    for (const e of series) {
+      if (e.y < gMin) gMin = e.y;
+      if (e.y > gMax) gMax = e.y;
+    }
+    const span = gMax - gMin;
+    const rowOf = (y) =>
+      span === 0 ? H - 1 : H - 1 - Math.round(((y - gMin) / span) * (H - 1));
+    const grid = [];
+    for (let r = 0; r < H; r++) grid.push(new Array(W).fill(" "));
+    for (let i = 0; i < n - 1; i++) {
+      const r0 = rowOf(series[i].y);
+      const r1 = rowOf(series[i + 1].y);
+      grid[r0][2 * i] = g.h;
+      const tcol = 2 * i + 1;
+      if (r0 === r1) {
+        grid[r0][tcol] = g.h;
+      } else if (r0 < r1) {
+        // visually stepping DOWN (y decreased)
+        grid[r0][tcol] = g.tr;
+        grid[r1][tcol] = g.bl;
+        for (let r = r0 + 1; r < r1; r++) grid[r][tcol] = g.v;
+      } else {
+        // visually stepping UP (y increased)
+        grid[r0][tcol] = g.br;
+        grid[r1][tcol] = g.tl;
+        for (let r = r1 + 1; r < r0; r++) grid[r][tcol] = g.v;
+      }
+    }
+    // Final entry's horizontal cell.
+    grid[rowOf(series[n - 1].y)][2 * (n - 1)] = g.h;
+    return grid.map((arr) => arr.join(""));
+  };
+
+  // Gantt. One row per task, `{labels} {bars}` with bars sized against
+  // the series' `maxEnd`. Budget is 20 cells by default, or shrunk from
+  // an explicit `meta.size.w` (min 5). Glyphs collapse to `#` under the
+  // ASCII theme. Constants mirror src/go/pkg/pylon/render_gantt.go.
+  const GANTT_BUDGET_DEFAULT = 20;
+  const GANTT_BUDGET_MIN = 5;
+  const GANTT_LABEL_GUTTER = 4;
+
+  const ganttGlyph = (bc) => (bc === ASCII_BOX ? "#" : BAR_GLYPH);
+
+  // validateGanttSeries checks the resolved series against
+  // `[{x, start, end}]`. `x` is required (the task label); `start` and
+  // `end` must be finite numbers. Range rule: `start >= 0` AND
+  // `end >= start`. Returns an inline-error row array on failure or
+  // `null` on success.
+  const validateGanttSeries = (refValue) => {
+    const shape = () => [`⚠ gantt: expected [{x, start, end}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ gantt: empty series`];
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") return shape();
+      if (!("x" in entry) || !("start" in entry) || !("end" in entry)) {
+        return shape();
+      }
+      const { start, end } = entry;
+      if (typeof start !== "number" || !Number.isFinite(start)) return shape();
+      if (typeof end !== "number" || !Number.isFinite(end)) return shape();
+      if (start < 0 || end < start) return [`⚠ gantt: invalid range`];
+    }
+    return null;
+  };
+
+  // renderGantt lays one row per task: `{label right-aligned} {bars}`.
+  // Bar cells for entry i span `round(start/maxEnd*budget)` to
+  // `round(end/maxEnd*budget) - 1`. A zero-width bar (`start === end`)
+  // emits an empty bar area so the label still lines up with the other
+  // rows.
+  const renderGantt = (series, bc, size) => {
+    const glyph = ganttGlyph(bc);
+    const labels = series.map((e) => String(e.x));
+    const labelW = labels.reduce((w, s) => Math.max(w, displayWidth(s)), 0);
+    let budget = GANTT_BUDGET_DEFAULT;
+    if (size && typeof size.w === "number") {
+      budget = Math.max(GANTT_BUDGET_MIN, size.w - labelW - GANTT_LABEL_GUTTER);
+    }
+    let maxEnd = 0;
+    for (const e of series) if (e.end > maxEnd) maxEnd = e.end;
+    return series.map((e, i) => {
+      let startCell = 0;
+      let endCell = -1;
+      if (maxEnd > 0) {
+        startCell = Math.round((e.start / maxEnd) * budget);
+        endCell = Math.round((e.end / maxEnd) * budget) - 1;
+      }
+      const bars = new Array(budget).fill(" ");
+      for (let c = startCell; c <= endCell && c < budget; c++) bars[c] = glyph;
+      return `${padRow(labels[i], labelW, "right", 0)} ${bars.join("")}`;
+    });
+  };
 
   // parseProgressScalar reads the concatenated text of a renderer
   // body as a finite number. Returns null when the body is empty,
@@ -1882,6 +2099,32 @@
       if (err) return err;
       return renderCandlestick(refValue, bc);
     },
+
+    // Histogram. Shares the bar-family `[{x,y}]` shape so the
+    // validator reuses validateBarSeries; the renderer paints 8 rows
+    // of gap-less bars and an optional centred x-label footer.
+    hist(refValue, bc) {
+      const err = validateHistSeries(refValue);
+      if (err) return err;
+      return renderHist(refValue, bc);
+    },
+
+    // Step. Sparkline-style tolerance (signed y + duplicate x OK);
+    // the 5-row stepped line uses corner glyphs for transitions.
+    step(refValue, bc) {
+      const err = validateStepSeries(refValue);
+      if (err) return err;
+      return renderStep(refValue, bc);
+    },
+
+    // Gantt. `[{x, start, end}]` with a size-aware bar budget; the
+    // `size` parameter is the root meta.size so the renderer can
+    // shrink the default 20-cell budget when the outer box is narrow.
+    gantt(refValue, bc, budgetW, size) {
+      const err = validateGanttSeries(refValue);
+      if (err) return err;
+      return renderGantt(refValue, bc, size);
+    },
   };
 
   // Inspect a renderer-tagged box and rewrite its items to either the
@@ -1891,7 +2134,7 @@
   // `dataMap` is the resolved frontmatter `meta.data` (flat list or
   // map of named series). `budgetW` is the content-width budget the
   // containing box is willing to devote to the renderer's visuals.
-  const applyChartRenderer = (box, dataMap, bc, budgetW) => {
+  const applyChartRenderer = (box, dataMap, bc, budgetW, size) => {
     const name = box.renderer;
     const handler = chartRenderers[name];
     const items = box.items || [];
@@ -1969,6 +2212,29 @@
         const rendered = handler(refValue, bc);
         return rendered.map((r) => ({ type: "text", content: r }));
       }
+      // Histogram reuses the bar-family `[{x,y}]` validator.
+      if (name === "hist") {
+        const err = validateHistSeries(refValue);
+        if (err) return inlineError(err[0]);
+        const rendered = handler(refValue, bc);
+        return rendered.map((r) => ({ type: "text", content: r }));
+      }
+      // Step carries a sparkline-style validator (shape + empty only).
+      if (name === "step") {
+        const err = validateStepSeries(refValue);
+        if (err) return inlineError(err[0]);
+        const rendered = handler(refValue, bc);
+        return rendered.map((r) => ({ type: "text", content: r }));
+      }
+      // Gantt carries its own `[{x, start, end}]` shape + range
+      // validator, and forwards root-meta size so it can compute a
+      // size-aware bar budget when `size: W x H` is set.
+      if (name === "gantt") {
+        const err = validateGanttSeries(refValue);
+        if (err) return inlineError(err[0]);
+        const rendered = handler(refValue, bc, budgetW, size);
+        return rendered.map((r) => ({ type: "text", content: r }));
+      }
       const rendered = handler(refValue, bc, budgetW);
       return rendered
         ? rendered.map((r) => ({ type: "text", content: r }))
@@ -1986,11 +2252,11 @@
   // Walk the AST *before* rendering; for any box carrying a renderer
   // tag, rewrite its items. Also flags any box that holds a dataRef
   // WITHOUT a renderer -- that's the "bare @ref" error case.
-  const applyChartRenderers = (item, dataMap, bc, budgetW) => {
+  const applyChartRenderers = (item, dataMap, bc, budgetW, size) => {
     if (!item || typeof item !== "object") return;
     if (item.type === "box") {
       if (item.renderer) {
-        item.items = applyChartRenderer(item, dataMap, bc, budgetW);
+        item.items = applyChartRenderer(item, dataMap, bc, budgetW, size);
       } else if (Array.isArray(item.items)) {
         const bareRef = item.items.find((it) => it && it.type === "dataRef");
         if (bareRef) {
@@ -2005,10 +2271,10 @@
     }
     if (Array.isArray(item.items)) {
       for (const child of item.items)
-        applyChartRenderers(child, dataMap, bc, budgetW);
+        applyChartRenderers(child, dataMap, bc, budgetW, size);
     }
     if (item.type === "edge" && item.label) {
-      applyChartRenderers(item.label, dataMap, bc, budgetW);
+      applyChartRenderers(item.label, dataMap, bc, budgetW, size);
     }
   };
 
@@ -2272,7 +2538,7 @@
     // asked for a bar chart, not a giant.)
     const barBudget =
       size?.w !== undefined ? Math.min(BAR_WIDTH_DEFAULT, size.w) : undefined;
-    applyChartRenderers(ast, ast.meta?.data, bc, barBudget);
+    applyChartRenderers(ast, ast.meta?.data, bc, barBudget, size);
     const rows = renderBoxRows(ast, bc, {
       targetW: size?.w,
       targetH: size?.h,

@@ -347,6 +347,68 @@ const fixtures = [
       !o.includes("▒") &&
       !o.includes("█"),
   },
+  {
+    name: "hist renders pre-binned bars",
+    src:
+      "---\ndata:\n  - x: a\n    y: 3\n  - x: b\n    y: 7\n" +
+      "  - x: c\n    y: 5\n  - x: d\n    y: 2\n---\n[ @data | hist ]",
+    expect: (o) => o.includes("█") && !o.includes("⚠"),
+  },
+  {
+    name: "hist respects ASCII theme",
+    src:
+      "---\ntheme: ascii\ndata:\n  - x: a\n    y: 3\n  - x: b\n    y: 7\n" +
+      "---\n[ @data | hist ]",
+    expect: (o) => o.includes("#") && !o.includes("█"),
+  },
+  {
+    name: "hist rejects negative y inline",
+    src:
+      "---\ndata:\n  - x: a\n    y: -1\n  - x: b\n    y: 2\n" +
+      "---\n[ @data | hist ]",
+    expect: (o) => o.includes("⚠ hist: negative y") && !o.includes("█"),
+  },
+  {
+    name: "step renders worked example byte-for-byte",
+    src:
+      "---\ndata:\n  s:\n    - x: 1\n      y: 3\n    - x: 2\n      y: 5\n" +
+      "    - x: 3\n      y: 2\n---\n[ @s | step ]",
+    // Pinned 5x5 grid: ` ┌─┐ / │ │ / │ │ /─┘ │ /   └─`.
+    expect: (o) => o.includes("┌─┐") && o.includes("└─") && o.includes("─┘"),
+  },
+  {
+    name: "step tolerates negative y",
+    src:
+      "---\ndata:\n  s:\n    - x: 1\n      y: -2\n    - x: 2\n      y: 0\n" +
+      "    - x: 3\n      y: -1\n---\n[ @s | step ]",
+    expect: (o) => !o.includes("⚠") && o.includes("─"),
+  },
+  {
+    name: "step respects ASCII theme",
+    src:
+      "---\ntheme: ascii\ndata:\n  s:\n    - x: 1\n      y: 3\n    - x: 2\n" +
+      "      y: 5\n    - x: 3\n      y: 2\n---\n[ @s | step ]",
+    expect: (o) => o.includes("+") && !o.includes("┌"),
+  },
+  {
+    name: "gantt renders task bars",
+    src:
+      "---\ndata:\n  - x: plan\n    start: 0\n    end: 3\n" +
+      "  - x: build\n    start: 2\n    end: 8\n" +
+      "  - x: ship\n    start: 7\n    end: 10\n---\n[ @data | gantt ]",
+    expect: (o) =>
+      o.includes("█") &&
+      o.includes("plan") &&
+      o.includes("build") &&
+      o.includes("ship"),
+  },
+  {
+    name: "gantt rejects invalid range inline",
+    src:
+      "---\ndata:\n  - x: a\n    start: 5\n    end: 2\n" +
+      "---\n[ @data | gantt ]",
+    expect: (o) => o.includes("⚠ gantt: invalid range"),
+  },
 ];
 
 let failed = 0;

@@ -464,6 +464,54 @@ func TestRendererInlineErrorCatalogue(t *testing.T) {
 			wantCode: CodeCandlestickOHLC,
 			wantMsg:  "⚠ candlestick: invalid ohlc",
 		},
+		{
+			name:     "hist-shape",
+			src:      "[ @s | hist ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ hist: expected [{x,y}]",
+		},
+		{
+			name:     "hist-empty",
+			src:      "[ @s | hist ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ hist: empty series",
+		},
+		{
+			name:     "step-shape",
+			src:      "[ @s | step ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ step: expected [{x,y}]",
+		},
+		{
+			name:     "step-empty",
+			src:      "[ @s | step ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ step: empty series",
+		},
+		{
+			name:     "gantt-shape",
+			src:      "[ @s | gantt ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ gantt: expected [{x, start, end}]",
+		},
+		{
+			name:     "gantt-empty",
+			src:      "[ @s | gantt ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ gantt: empty series",
+		},
+		{
+			name:     "gantt-invalid-range",
+			src:      "---\ndata:\n  - x: spec\n    start: 5\n    end: 2\n---\n[ @data | gantt ]",
+			wantCode: CodeGanttRange,
+			wantMsg:  "⚠ gantt: invalid range",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
