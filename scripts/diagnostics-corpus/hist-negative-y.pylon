@@ -1,0 +1,7 @@
+---
+data:
+  vals:
+    - x: a
+      y: -1
+---
+[ @vals | hist ]
