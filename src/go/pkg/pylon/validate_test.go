@@ -444,6 +444,26 @@ func TestRendererInlineErrorCatalogue(t *testing.T) {
 			wantCode: CodeBarEmpty,
 			wantMsg:  "⚠ sparkline: empty series",
 		},
+		{
+			name:     "candlestick-shape",
+			src:      "[ @s | candlestick ]",
+			dataHack: map[string]interface{}{"s": "not an array"},
+			wantCode: CodeBarShape,
+			wantMsg:  "⚠ candlestick: expected [{x, o, h, l, c}]",
+		},
+		{
+			name:     "candlestick-empty",
+			src:      "[ @s | candlestick ]",
+			dataHack: map[string]interface{}{"s": []map[string]interface{}{}},
+			wantCode: CodeBarEmpty,
+			wantMsg:  "⚠ candlestick: empty series",
+		},
+		{
+			name:     "candlestick-invalid-ohlc",
+			src:      "---\ndata:\n  - x: Mon\n    o: 10\n    h: 11\n    l: 8\n    c: 15\n---\n[ @data | candlestick ]",
+			wantCode: CodeCandlestickOHLC,
+			wantMsg:  "⚠ candlestick: invalid ohlc",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,0 +1,20 @@
+---
+data:
+  delta:
+    - x: Q1
+      o: -2
+      h: 1
+      l: -3
+      c: 0
+    - x: Q2
+      o: 0
+      h: 2
+      l: -1
+      c: -1
+    - x: Q3
+      o: -1
+      h: 3
+      l: -2
+      c: 2
+---
+[ @delta | candlestick ]

@@ -1377,6 +1377,127 @@
     });
   };
 
+  // Candlestick glyphs. Five glyphs: blank, wick, bull body, bear
+  // body, doji. The default theme pulls box-drawing / shading glyphs
+  // (U+2502 wick, U+2592 bull, U+2588 bear, U+2500 doji); ASCII swaps
+  // to printable-only fallbacks. Constants mirror
+  // src/go/pkg/pylon/render_candlestick.go so the two implementations
+  // stay byte-identical.
+  const CANDLESTICK_HEIGHT_DEFAULT = 8;
+  const CANDLESTICK_GLYPHS_DEFAULT = {
+    blank: " ",
+    wick: "│",
+    bull: "▒",
+    bear: "█",
+    doji: "─",
+  };
+  const CANDLESTICK_GLYPHS_ASCII = {
+    blank: " ",
+    wick: "|",
+    bull: "+",
+    bear: "#",
+    doji: "-",
+  };
+
+  const candlestickGlyphs = (bc) =>
+    bc === ASCII_BOX ? CANDLESTICK_GLYPHS_ASCII : CANDLESTICK_GLYPHS_DEFAULT;
+
+  // validateCandlestickSeries checks the resolved series matches
+  // `[{x, o, h, l, c}]`. Three ordered checks: shape, empty, ohlc.
+  // Tolerates negative values (signed price deltas are meaningful) and
+  // duplicate x (the renderer only uses the ordered sequence). Returns
+  // an inline-error row array on failure or `null` on success.
+  const validateCandlestickSeries = (refValue) => {
+    const shape = () => [`⚠ candlestick: expected [{x, o, h, l, c}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ candlestick: empty series`];
+    for (const entry of refValue) {
+      if (!entry || typeof entry !== "object") return shape();
+      for (const k of ["x", "o", "h", "l", "c"]) {
+        if (!Object.prototype.hasOwnProperty.call(entry, k)) return shape();
+      }
+      for (const k of ["o", "h", "l", "c"]) {
+        const v = entry[k];
+        if (typeof v !== "number" || Number.isNaN(v)) return shape();
+      }
+    }
+    for (const entry of refValue) {
+      const { o, h, l, c } = entry;
+      if (h < Math.max(o, c) || l > Math.min(o, c)) {
+        return [`⚠ candlestick: invalid ohlc`];
+      }
+    }
+    return null;
+  };
+
+  // renderCandlestick paints a fixed-height body (8 rows) per column,
+  // one column per series entry. Normalisation is global across the
+  // series' min/max of (o, h, l, c). Each column's glyph per row picks
+  // from: blank above the high, wick above the body, body (bull/bear/
+  // doji) across [min(o,c), max(o,c)], wick below the body down to the
+  // low, then blank. Compact mode (every x === "") drops the footer
+  // and uses one-cell columns; labelled mode pins the candle to the
+  // left-most cell and centres the x label in a footer row whose width
+  // matches max(displayWidth(x), 1).
+  const renderCandlestick = (series, bc) => {
+    const g = candlestickGlyphs(bc);
+    const H = CANDLESTICK_HEIGHT_DEFAULT;
+    const labels = series.map((e) => String(e.x));
+    const hasLabel = labels.some((l) => l !== "");
+
+    let gMin = Infinity;
+    let gMax = -Infinity;
+    for (const e of series) {
+      const lo = Math.min(e.o, e.h, e.l, e.c);
+      const hi = Math.max(e.o, e.h, e.l, e.c);
+      if (lo < gMin) gMin = lo;
+      if (hi > gMax) gMax = hi;
+    }
+    const span = gMax - gMin;
+    const rowOf = (p) => {
+      if (span === 0) return H - 1;
+      const idx = Math.round(((p - gMin) / span) * (H - 1));
+      return H - 1 - idx;
+    };
+
+    const colW = series.map((_, i) =>
+      hasLabel ? Math.max(displayWidth(labels[i]), 1) : 1,
+    );
+    const cols = series.map((e) => {
+      const rH = rowOf(e.h);
+      const rL = rowOf(e.l);
+      const rO = rowOf(e.o);
+      const rC = rowOf(e.c);
+      const bodyTop = Math.min(rO, rC);
+      const bodyBot = Math.max(rO, rC);
+      const body = e.c > e.o ? g.bull : e.c < e.o ? g.bear : g.doji;
+      return { rH, rL, bodyTop, bodyBot, body };
+    });
+
+    const rows = [];
+    for (let r = 0; r < H; r++) {
+      let line = "";
+      for (let i = 0; i < series.length; i++) {
+        const col = cols[i];
+        let ch;
+        if (r < col.rH || r > col.rL) ch = g.blank;
+        else if (r < col.bodyTop) ch = g.wick;
+        else if (r <= col.bodyBot) ch = col.body;
+        else ch = g.wick;
+        if (hasLabel) {
+          line += ch + " ".repeat(colW[i] - 1);
+        } else {
+          line += ch;
+        }
+      }
+      rows.push(line);
+    }
+    if (hasLabel) {
+      rows.push(labels.map((s, i) => padRow(s, colW[i], "center", 1)).join(""));
+    }
+    return rows;
+  };
+
   // parseProgressScalar reads the concatenated text of a renderer
   // body as a finite number. Returns null when the body is empty,
   // all-whitespace, or carries any non-numeric character -- the
@@ -1751,6 +1872,16 @@
       if (err) return err;
       return renderSparkline(refValue, bc);
     },
+
+    // Candlestick. Series-only: `[{x, o, h, l, c}]`. Flat-scalar shape
+    // (not `y:[...]`). The validator fires ahead of the renderer so
+    // shape / empty / invalid-ohlc errors short-circuit to an inline
+    // warning row; a clean series flows to the fixed-height body.
+    candlestick(refValue, bc) {
+      const err = validateCandlestickSeries(refValue);
+      if (err) return err;
+      return renderCandlestick(refValue, bc);
+    },
   };
 
   // Inspect a renderer-tagged box and rewrite its items to either the
@@ -1826,6 +1957,14 @@
       // negative y and duplicate x, so it routes to its own validator.
       if (name === "sparkline") {
         const err = validateSparklineSeries(refValue);
+        if (err) return inlineError(err[0]);
+        const rendered = handler(refValue, bc);
+        return rendered.map((r) => ({ type: "text", content: r }));
+      }
+      // Candlestick carries its own shape (`[{x, o, h, l, c}]`); bar-
+      // family validators would reject the missing `y` key.
+      if (name === "candlestick") {
+        const err = validateCandlestickSeries(refValue);
         if (err) return inlineError(err[0]);
         const rendered = handler(refValue, bc);
         return rendered.map((r) => ({ type: "text", content: r }));

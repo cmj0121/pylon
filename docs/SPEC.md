@@ -277,7 +277,7 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships seven renderers. Unknown names surface an inline
+Pylon 0.2.0 ships eight renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
 | Renderer       | Input                       | Output                                                          |
@@ -289,6 +289,7 @@ Pylon 0.2.0 ships seven renderers. Unknown names surface an inline
 | `progress`     | scalar or `@ref`→`[{x,y}]`  | Progress bar(s) with a right-aligned `%` label; 20-cell budget. |
 | `heatmap`      | `@ref` → `[{x, y:[n,...]}]` | 2D matrix of ramp glyphs (`░▒▓█` / `.+*#`).                     |
 | `sparkline`    | `@ref` → `[{x,y}]`          | Single-row ramp; 8 levels default / 4 levels ascii.             |
+| `candlestick`  | `@ref` → `[{x,o,h,l,c}]`    | Fixed 8-row OHLC candles with bull/bear/doji bodies and wicks.  |
 
 `bar` is a v0.1 alias for `hbar`; both render identically.
 
@@ -540,6 +541,129 @@ price moves) is the canonical use. Shape problems still surface
 `⚠ sparkline: expected [{x,y}]`, and an empty series reports
 `sparkline: empty series` — no new diagnostic codes.
 
+### candlestick
+
+```pylon
+---
+data:
+  week:
+    - x: Mon
+      o: 1
+      h: 5
+      l: 0
+      c: 4
+    - x: Tue
+      o: 6
+      h: 7
+      l: 2
+      c: 3
+    - x: Wed
+      o: 4
+      h: 5
+      l: 3
+      c: 4
+    - x: Thu
+      o: 2
+      h: 6
+      l: 1
+      c: 5
+    - x: Fri
+      o: 7
+      h: 7
+      l: 4
+      c: 5
+---
+[ @week | candlestick ]
+```
+
+```txt
+┌─────────────────────┐
+│      │        █     │
+│      █     │  █     │
+│   │  █  │  ▒  █     │
+│   ▒  █  ─  ▒  │     │
+│   ▒  █  │  ▒        │
+│   ▒  │     ▒        │
+│   ▒        │        │
+│   │                 │
+│   MonTueWedThuFri   │
+└─────────────────────┘
+```
+
+`candlestick` accepts an `@ref` pointing to `[{x, o, h, l, c}]` —
+one entry per column, with `x` as the label and `o`, `h`, `l`, `c`
+as the open / high / low / close prices. Bodies draw on a fixed
+8-row grid; wicks extend from `h` down to the top of the body and
+from the bottom of the body down to `l`. Bullish (`c > o`) uses
+`▒`, bearish (`c < o`) uses `█`, and doji (`c == o`) collapses the
+body to a single `─` row. Wicks are `│`. Under `theme: ascii` the
+glyphs swap to `+` bull, `#` bear, `-` doji, `|` wick.
+
+Column width is `max(|xlabel|, 1)`; the candle glyph occupies the
+left-most cell of each column and a footer row carries the labels.
+When every entry has `x: ""` the renderer drops the footer and
+packs columns at width 1 — a **compact mode** suited to dense,
+trend-focused layouts. The same week of data rendered compact:
+
+```pylon
+---
+data:
+  week:
+    - x: ""
+      o: 1
+      h: 5
+      l: 0
+      c: 4
+    - x: ""
+      o: 6
+      h: 7
+      l: 2
+      c: 3
+    - x: ""
+      o: 4
+      h: 5
+      l: 3
+      c: 4
+    - x: ""
+      o: 2
+      h: 6
+      l: 1
+      c: 5
+    - x: ""
+      o: 7
+      h: 7
+      l: 4
+      c: 5
+---
+[ @week | candlestick ]
+```
+
+```txt
+┌───────────┐
+│    │  █   │
+│    █ │█   │
+│   │█│▒█   │
+│   ▒█─▒│   │
+│   ▒█│▒    │
+│   ▒│ ▒    │
+│   ▒  │    │
+│   │       │
+└───────────┘
+```
+
+Normalization is **global**: rows map across the series
+`min(l over all)` → `max(h over all)`, so every candle shares one
+y-scale. A fully flat series collapses every candle to a single
+doji row — deterministic rather than division-by-zero.
+
+Like sparkline, candlestick **tolerates negative values and
+duplicate `x`** — signed P&L deltas and repeated dates are normal.
+Shape problems (missing field, non-numeric or NaN price) surface
+`⚠ candlestick: expected [{x, o, h, l, c}]`; an empty series
+reports `candlestick: empty series`; and an entry where
+`h < max(o, c)` or `l > min(o, c)` reports
+`candlestick: invalid ohlc`.
+
 ## Error model
 
 Pylon surfaces errors through two channels.
@@ -555,17 +679,18 @@ Pylon surfaces errors through two channels.
 
 ### Render-time error catalogue
 
-| Trigger                             | Inline message               |
-| ----------------------------------- | ---------------------------- |
-| Raw string piped to non-`text`      | `bar: use @ref`              |
-| Unknown renderer name               | `unknown renderer: foo`      |
-| `@ref` not declared in frontmatter  | `@missing not found`         |
-| Bare `@ref` with no renderer        | `@name: requires a renderer` |
-| Renderer got wrong shape            | `hbar: expected [{x,y}]`     |
-| Empty series for a bar renderer     | `hbar: empty series`         |
-| Any negative `y`                    | `hbar: negative y`           |
-| Duplicate `x` in series             | `hbar: duplicate x "a"`      |
-| Non-numeric scalar in `\| progress` | `progress: expected number`  |
+| Trigger                                               | Inline message               |
+| ----------------------------------------------------- | ---------------------------- |
+| Raw string piped to non-`text`                        | `bar: use @ref`              |
+| Unknown renderer name                                 | `unknown renderer: foo`      |
+| `@ref` not declared in frontmatter                    | `@missing not found`         |
+| Bare `@ref` with no renderer                          | `@name: requires a renderer` |
+| Renderer got wrong shape                              | `hbar: expected [{x,y}]`     |
+| Empty series for a bar renderer                       | `hbar: empty series`         |
+| Any negative `y`                                      | `hbar: negative y`           |
+| Duplicate `x` in series                               | `hbar: duplicate x "a"`      |
+| Non-numeric scalar in `\| progress`                   | `progress: expected number`  |
+| OHLC inconsistency (`h < max(o,c)` or `l > min(o,c)`) | `candlestick: invalid ohlc`  |
 
 Bar-family errors (shape / empty / negative-y / duplicate-x) carry
 the actually-invoked renderer name: `hbar:` or `vbar:`. `bar` is an

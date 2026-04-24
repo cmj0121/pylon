@@ -1,0 +1,10 @@
+---
+data:
+  bad:
+    - x: Mon
+      o: 1
+      h: 2
+      l: 0
+      c: 5
+---
+[ @bad | candlestick ]

@@ -30,6 +30,7 @@ const (
 	CodeBarDuplicateX   Code = "bar.duplicate_x"        // bar-family series has duplicate x keys
 	CodeProgressNotNumber Code = "progress.not_number"  // `| progress` over a scalar body that doesn't parse as a number
 	CodeHeatmapShape    Code = "heatmap.shape"           // `| heatmap` series doesn't match `[{x, y:[n,...]}]` (covers ragged/non-numeric/non-array y)
+	CodeCandlestickOHLC Code = "candlestick.ohlc"         // `| candlestick` entry breaks h >= max(o,c) / l <= min(o,c)
 )
 
 // Diagnostic is one complaint about the source. Message text matches

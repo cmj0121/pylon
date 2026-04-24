@@ -81,14 +81,15 @@ func validateNames(root *Box) []Diagnostic {
 // its own name through for diagnostics — the user sees "⚠ bar: …"
 // when they wrote `| bar`, not the internal "⚠ hbar: …".
 var knownRenderers = map[string]bool{
-	"text":      true,
-	"hbar":      true,
-	"vbar":      true,
-	"bar":       true,
-	"banner":    true,
-	"progress":  true,
-	"heatmap":   true,
-	"sparkline": true,
+	"text":        true,
+	"hbar":        true,
+	"vbar":        true,
+	"bar":         true,
+	"banner":      true,
+	"progress":    true,
+	"heatmap":     true,
+	"sparkline":   true,
+	"candlestick": true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -199,6 +200,12 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 	if b.Renderer == "sparkline" {
 		return validateSparklineSeries(series)
 	}
+	// candlestick carries its own `[{x, o, h, l, c}]` shape plus the
+	// h >= max(o,c) / l <= min(o,c) consistency check; the bar-family
+	// validator would misread the five-field entry.
+	if b.Renderer == "candlestick" {
+		return validateCandlestickSeries(series)
+	}
 	return barSeriesInlineError(b.Renderer, series)
 }
 
@@ -265,7 +272,7 @@ func rendererInlineErrorSpan(b *Box, code Code) Span {
 // bar-data errors) while still visiting each Box only once.
 func isBarSeriesCode(code Code) bool {
 	switch code {
-	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX, CodeHeatmapShape:
+	case CodeBarShape, CodeBarEmpty, CodeBarNegativeY, CodeBarDuplicateX, CodeHeatmapShape, CodeCandlestickOHLC:
 		return true
 	}
 	return false

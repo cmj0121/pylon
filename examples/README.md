@@ -20,6 +20,7 @@ or by copying the source into a `<pylon-chart>` element.
 | [progress.pylon](progress.pylon)           | Progress bars with `%` labels from a `@ref` series  |
 | [heatmap.pylon](heatmap.pylon)             | 2D matrix of ramp glyphs from a `@ref` series       |
 | [sparkline.pylon](sparkline.pylon)         | Inline trend row of ramp glyphs from a `@ref`       |
+| [candlestick.pylon](candlestick.pylon)     | OHLC candles with bull/bear/doji bodies and wicks   |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
 
 ## hello.pylon
@@ -289,6 +290,65 @@ data:
 ┌────────────────┐
 │   ▃▆▁▇▄█▂▅▆▃   │
 └────────────────┘
+```
+
+## candlestick.pylon
+
+```pylon
+---
+data:
+  week:
+    - x: Mon
+      o: 2
+      h: 5
+      l: 0
+      c: 4
+    - x: Tue
+      o: 5
+      h: 6
+      l: 3
+      c: 3
+    - x: Wed
+      o: 3
+      h: 4
+      l: 2
+      c: 3
+    - x: Thu
+      o: 4
+      h: 7
+      l: 3
+      c: 6
+    - x: Fri
+      o: 6
+      h: 6
+      l: 2
+      c: 3
+    - x: Sat
+      o: 2
+      h: 3
+      l: 1
+      c: 2
+    - x: Sun
+      o: 3
+      h: 7
+      l: 0
+      c: 5
+---
+[ @week | candlestick ]
+```
+
+```txt
+┌───────────────────────────┐
+│            │        │     │
+│      │     ▒  █     │     │
+│   │  █     ▒  █     ▒     │
+│   ▒  █  │  ▒  █     ▒     │
+│   ▒  █  ─  │  █  │  ▒     │
+│   ▒     │     │  ─  │     │
+│   │              │  │     │
+│   │                 │     │
+│   MonTueWedThuFriSatSun   │
+└───────────────────────────┘
 ```
 
 ## theme-ascii.pylon

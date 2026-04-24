@@ -106,15 +106,15 @@ and the bundled install target.
 
 ## Syntax at a glance
 
-| Name      | Syntax          | Description                                                                      |
-| --------- | --------------- | -------------------------------------------------------------------------------- |
-| node      | `[ LABEL ]`     | Bordered node. `( LABEL )` is the borderless variant.                            |
-| edge      | `->`            | Edge from the previous node to the next. `<-`, `<->`, `-->` etc. too.            |
-| alignment | `-`             | Alignment marker flush with the bracket (`[- x -]` centers `x`).                 |
-| name      | `[ x :: NAME ]` | Tag a node with `NAME` so it can be referenced later.                            |
-| ref       | `&NAME`         | Reference a previously named node.                                               |
-| data ref  | `@NAME`         | Reference a data series from frontmatter.                                        |
-| renderer  | `\| NAME`       | Pipe to a renderer: `bar`, `vbar`, `banner`, `progress`, `heatmap`, `sparkline`. |
+| Name      | Syntax          | Description                                                              |
+| --------- | --------------- | ------------------------------------------------------------------------ |
+| node      | `[ LABEL ]`     | Bordered node. `( LABEL )` is the borderless variant.                    |
+| edge      | `->`            | Edge from the previous node to the next. `<-`, `<->`, `-->` etc. too.    |
+| alignment | `-`             | Alignment marker flush with the bracket (`[- x -]` centers `x`).         |
+| name      | `[ x :: NAME ]` | Tag a node with `NAME` so it can be referenced later.                    |
+| ref       | `&NAME`         | Reference a previously named node.                                       |
+| data ref  | `@NAME`         | Reference a data series from frontmatter.                                |
+| renderer  | `\| NAME`       | Pipe to a renderer (`bar`, `vbar`, `sparkline`, … — see SPEC catalogue). |
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full grammar, renderer
 catalogue, and error model.
