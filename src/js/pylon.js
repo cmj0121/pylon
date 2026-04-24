@@ -2598,6 +2598,78 @@
   const FONT_STACK_MONO = "ui-monospace, Menlo, Consolas, monospace";
   const FONT_SIZE_PX = CELL_PX_H * 0.7;
 
+  // svgBlockOpacity maps a Unicode block-shade glyph to the opacity
+  // its <rect> should render at. Returns null for any other rune —
+  // that rune stays as text in the SVG output. Opacities mirror the
+  // Unicode reference ramp: `░`=25%, `▒`=50%, `▓`=75%, `█`=100%.
+  const svgBlockOpacity = (ch) => {
+    switch (ch) {
+      case "█":
+        return 1;
+      case "▓":
+        return 0.75;
+      case "▒":
+        return 0.5;
+      case "░":
+        return 0.25;
+    }
+    return null;
+  };
+
+  // emitSVGRow walks a single ASCII row and appends a mix of <rect>
+  // and <text> elements to the svg root. Unicode block glyphs
+  // (`█▓▒░`) coalesce into contiguous <rect> runs rendered with
+  // opacity matching the ramp step, so chart bars show as clean
+  // solid / dithered blocks instead of font characters whose
+  // antialiasing differs by renderer. Every other cell becomes a
+  // <text> segment at its natural position.
+  const emitSVGRow = (svg, ns, row, x0, rowIdx) => {
+    const yTop = rowIdx * CELL_PX_H;
+    const baseline = (rowIdx + 0.5) * CELL_PX_H;
+    const flushText = (start, end) => {
+      if (start >= end) return;
+      const seg = row.slice(start, end);
+      if (seg.trim() === "") return;
+      const t = document.createElementNS(ns, "text");
+      t.setAttribute("x", x0 + start * CELL_PX_W);
+      t.setAttribute("y", baseline);
+      t.setAttribute("text-anchor", "start");
+      t.setAttribute("dominant-baseline", "middle");
+      t.setAttribute("font-family", "monospace");
+      t.setAttribute("font-size", FONT_SIZE_PX);
+      t.setAttribute("style", "white-space: pre");
+      t.setAttribute("xml:space", "preserve");
+      t.setAttribute("fill", "currentColor");
+      t.textContent = seg;
+      svg.append(t);
+    };
+    let i = 0;
+    let textStart = 0;
+    while (i < row.length) {
+      const op = svgBlockOpacity(row[i]);
+      if (op === null) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < row.length && svgBlockOpacity(row[j]) === op) {
+        j++;
+      }
+      flushText(textStart, i);
+      const rect = document.createElementNS(ns, "rect");
+      rect.setAttribute("x", x0 + i * CELL_PX_W);
+      rect.setAttribute("y", yTop);
+      rect.setAttribute("width", (j - i) * CELL_PX_W);
+      rect.setAttribute("height", CELL_PX_H);
+      rect.setAttribute("fill", "currentColor");
+      if (op < 1) rect.setAttribute("opacity", op);
+      svg.append(rect);
+      i = j;
+      textStart = j;
+    }
+    flushText(textStart, row.length);
+  };
+
   const drawCanvasBorder = (ctx, w, h, color) => {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = color;
@@ -2726,25 +2798,9 @@
         svg.append(rect);
       }
       const range = paintableRange(ast, rows);
-      const x = ast.bordered ? CELL_PX_W : 0;
+      const x0 = ast.bordered ? CELL_PX_W : 0;
       for (let i = range.first; i < range.last; i++) {
-        const t = document.createElementNS(ns, "text");
-        t.setAttribute("x", x);
-        t.setAttribute("y", (i + 0.5) * CELL_PX_H);
-        t.setAttribute("text-anchor", "start");
-        t.setAttribute("dominant-baseline", "middle");
-        t.setAttribute("font-family", "monospace");
-        t.setAttribute("font-size", FONT_SIZE_PX);
-        // SVG2 deprecates xml:space; modern browsers look at the CSS
-        // white-space property to keep runs of spaces from collapsing.
-        // Without this, rows that differ in leading-whitespace (e.g.
-        // "(a) -> [b]" where row 0 is padding+box and row 1 starts
-        // with the label) slide left and the box borders misalign.
-        t.setAttribute("style", "white-space: pre");
-        t.setAttribute("xml:space", "preserve");
-        t.setAttribute("fill", "currentColor");
-        t.textContent = paintableBody(ast, rows[i]);
-        svg.append(t);
+        emitSVGRow(svg, ns, paintableBody(ast, rows[i]), x0, i);
       }
       return svg;
     },

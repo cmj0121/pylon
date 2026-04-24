@@ -85,13 +85,87 @@ func RenderSVG(ast *Box) string {
 		// visually centered inside its cell. For the default 13x10
 		// cell/font that is a 3px shift.
 		baseline -= svgCellH - svgFontPx
-		fmt.Fprintf(&b,
-			`<text x="0" y="%d" xml:space="preserve">%s</text>`,
-			baseline, escapeXML(row))
-		b.WriteByte('\n')
+		emitSVGRow(&b, row, i*svgCellH, baseline, fill)
 	}
 	b.WriteString(`</svg>`)
 	return b.String()
+}
+
+// emitSVGRow walks a single ASCII row and emits a mix of <rect> and
+// <text> elements. Unicode block glyphs (`█▓▒░`) coalesce into
+// contiguous <rect> runs rendered with opacity matching the ramp
+// step, so chart bars show as clean solid / dithered blocks instead
+// of font characters whose antialiasing differs by renderer. Every
+// other cell is emitted as a <text> segment at its natural position.
+//
+// yTop is the top y-pixel of the row; baseline is the text baseline
+// (already nudged for cellH/fontPx alignment); fill is the resolved
+// theme ink color used both for text and for rect fill.
+func emitSVGRow(b *strings.Builder, row string, yTop, baseline int, fill string) {
+	runes := []rune(row)
+	i := 0
+	flushText := func(start, end int) {
+		if start >= end {
+			return
+		}
+		seg := string(runes[start:end])
+		if strings.TrimSpace(seg) == "" {
+			return
+		}
+		fmt.Fprintf(b,
+			`<text x="%d" y="%d" xml:space="preserve">%s</text>`,
+			start*svgCellW, baseline, escapeXML(seg))
+		b.WriteByte('\n')
+	}
+	textStart := 0
+	for i < len(runes) {
+		op, ok := svgBlockOpacity(runes[i])
+		if !ok {
+			i++
+			continue
+		}
+		j := i
+		for j < len(runes) {
+			op2, ok2 := svgBlockOpacity(runes[j])
+			if !ok2 || op2 != op {
+				break
+			}
+			j++
+		}
+		flushText(textStart, i)
+		width := (j - i) * svgCellW
+		if op < 1 {
+			fmt.Fprintf(b,
+				`<rect x="%d" y="%d" width="%d" height="%d" fill="%s" opacity="%g"/>`,
+				i*svgCellW, yTop, width, svgCellH, fill, op)
+		} else {
+			fmt.Fprintf(b,
+				`<rect x="%d" y="%d" width="%d" height="%d" fill="%s"/>`,
+				i*svgCellW, yTop, width, svgCellH, fill)
+		}
+		b.WriteByte('\n')
+		i = j
+		textStart = j
+	}
+	flushText(textStart, len(runes))
+}
+
+// svgBlockOpacity maps a Unicode block-shade glyph to the opacity its
+// <rect> should render at. Returns ok=false for any other rune — that
+// rune stays as text in the SVG output. Opacities mirror the Unicode
+// reference ramp: `░`=25%, `▒`=50%, `▓`=75%, `█`=100%.
+func svgBlockOpacity(r rune) (float64, bool) {
+	switch r {
+	case '█':
+		return 1.0, true
+	case '▓':
+		return 0.75, true
+	case '▒':
+		return 0.5, true
+	case '░':
+		return 0.25, true
+	}
+	return 0, false
 }
 
 // escapeXML escapes the five XML special characters for safe inclusion

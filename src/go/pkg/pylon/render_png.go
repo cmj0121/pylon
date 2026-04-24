@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"strings"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
@@ -96,9 +97,13 @@ func RenderPNG(ast *Box) ([]byte, error) {
 		Face: face,
 	}
 	for i, row := range rows {
-		baseline := pngPadding + i*lineH + ascent
+		yTop := pngPadding + i*lineH
+		paintBlockRuns(img, row, yTop, cellW, lineH, pngPadding, bg, fg)
+		baseline := yTop + ascent
 		drawer.Dot = fixed.P(pngPadding, baseline)
-		drawer.DrawString(row)
+		// Text pass: blank out the cells already painted as rects so
+		// the font glyph doesn't overlay the clean rectangle.
+		drawer.DrawString(stripBlockGlyphs(row))
 	}
 
 	var buf bytes.Buffer
@@ -142,4 +147,81 @@ func pngCellMetrics(face font.Face) (cellW, lineH, ascent int) {
 	}
 	cellW = adv.Ceil()
 	return cellW, lineH, ascent
+}
+
+// pngBlockOpacity mirrors svgBlockOpacity: maps a Unicode block-shade
+// glyph to its ramp opacity (0 < op <= 1) for native rectangle
+// rendering in the PNG output. Returns ok=false for any other rune.
+func pngBlockOpacity(r rune) (float64, bool) {
+	switch r {
+	case '█':
+		return 1.0, true
+	case '▓':
+		return 0.75, true
+	case '▒':
+		return 0.5, true
+	case '░':
+		return 0.25, true
+	}
+	return 0, false
+}
+
+// blendColor mixes bg and fg at the given foreground weight. Works in
+// 16-bit premultiplied RGBA (image/color's native resolution) and
+// returns an opaque RGBA so image/draw's Src operator lays it down
+// as-is.
+func blendColor(bg, fg color.Color, fgWeight float64) color.RGBA {
+	br, bgn, bb, _ := bg.RGBA()
+	fr, fgn, fb, _ := fg.RGBA()
+	mix := func(b, f uint32) uint8 {
+		v := float64(b)*(1-fgWeight) + float64(f)*fgWeight
+		return uint8(uint32(v) >> 8)
+	}
+	return color.RGBA{R: mix(br, fr), G: mix(bgn, fgn), B: mix(bb, fb), A: 0xff}
+}
+
+// paintBlockRuns walks a row and fills contiguous runs of Unicode
+// block-shade glyphs as solid rectangles in img. Each run takes its
+// own blended color (bg mixed toward fg at the ramp's opacity), so
+// bars render as clean dithered / solid blocks regardless of how the
+// embedded font rasterises the `█▓▒░` code points.
+func paintBlockRuns(img *image.RGBA, row string, yTop, cellW, lineH, padding int, bg, fg color.Color) {
+	runes := []rune(row)
+	i := 0
+	for i < len(runes) {
+		op, ok := pngBlockOpacity(runes[i])
+		if !ok {
+			i++
+			continue
+		}
+		j := i
+		for j < len(runes) {
+			op2, ok2 := pngBlockOpacity(runes[j])
+			if !ok2 || op2 != op {
+				break
+			}
+			j++
+		}
+		rect := image.Rect(padding+i*cellW, yTop, padding+j*cellW, yTop+lineH)
+		c := blendColor(bg, fg, op)
+		draw.Draw(img, rect, &image.Uniform{C: c}, image.Point{}, draw.Src)
+		i = j
+	}
+}
+
+// stripBlockGlyphs replaces every `█▓▒░` rune with a space so the
+// font-drawing pass doesn't overlay a glyph on top of the rectangle
+// already painted by paintBlockRuns. Every other character passes
+// through unchanged.
+func stripBlockGlyphs(row string) string {
+	var b strings.Builder
+	b.Grow(len(row))
+	for _, r := range row {
+		if _, isBlock := pngBlockOpacity(r); isBlock {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
