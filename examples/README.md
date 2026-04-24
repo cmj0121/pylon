@@ -25,6 +25,7 @@ or by copying the source into a `<pylon-chart>` element.
 | [step.pylon](step.pylon)                   | 5-row cumulative step line with corner connectors   |
 | [gantt.pylon](gantt.pylon)                 | Task bars over a shared horizontal budget           |
 | [theme-ascii.pylon](theme-ascii.pylon)     | `theme: ascii` swaps Unicode glyphs for plain ASCII |
+| [showcase.pylon](showcase.pylon)           | Every chart + diagram primitive in one source file  |
 
 ## hello.pylon
 

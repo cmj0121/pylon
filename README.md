@@ -121,8 +121,9 @@ catalogue, and error model.
 
 ## Learn more
 
-- [`examples/`](examples/) — eighteen standalone sample files, one
-  per feature.
+- [`examples/`](examples/) — nineteen standalone sample files,
+  one per feature, plus [`showcase.pylon`](examples/showcase.pylon)
+  demonstrating every primitive in one source.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.
 - [`docs/LSP.md`](docs/LSP.md) — Language Server reference (install,
   editor setup, diagnostics catalogue).
