@@ -5,14 +5,16 @@ import (
 	"strings"
 )
 
-// SVG cell geometry. 7px wide / 16px tall is a tighter Cascadia-class
-// monospace that packs chart rows together without the 30% inter-cell
-// whitespace that a 10x18 cell gave. Fonts with different metrics
-// have minor drift, but the values give a reasonable default viewBox.
+// SVG cell geometry. 5px wide / 13px tall packs Cascadia-class glyphs
+// at their natural advance with zero inter-cell whitespace — the grid
+// matches the PNG renderer's 10pt / 72 DPI tight cell. Fonts with
+// different metrics have minor drift, but the values give a reasonable
+// default viewBox. Reduce svgFontPx below 10 and text glyphs start
+// overlapping adjacent cells on browsers that snap to pixel rows.
 const (
-	svgCellW  = 7
-	svgCellH  = 16
-	svgFontPx = 13
+	svgCellW  = 5
+	svgCellH  = 13
+	svgFontPx = 10
 )
 
 // Theme color palette. Matches the `--pylon-ink` custom property from
@@ -79,10 +81,10 @@ func RenderSVG(ast *Box) string {
 	// places descenders near the grid line below.
 	for i, row := range rows {
 		baseline := (i + 1) * svgCellH
-		// Nudge the baseline up by a few pixels so the line sits
-		// visually centered inside its cell for a 14px font in an
-		// 18px cell.
-		baseline -= 4
+		// Nudge the baseline up (cellH - fontPx) so the line sits
+		// visually centered inside its cell. For the default 13x10
+		// cell/font that is a 3px shift.
+		baseline -= svgCellH - svgFontPx
 		fmt.Fprintf(&b,
 			`<text x="0" y="%d" xml:space="preserve">%s</text>`,
 			baseline, escapeXML(row))
