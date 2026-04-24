@@ -23,7 +23,7 @@ total=0
 while IFS= read -r -d '' src; do
   total=$((total + 1))
   name="$(basename "$src" .pylon)"
-  go_out=$("$go_bin" -f ascii "$src")
+  go_out=$("$go_bin" -f ascii --color=never "$src")
   js_out=$(node "$repo_root/scripts/pylon-render-js.mjs" "$src")
   if [[ "$go_out" != "$js_out" ]]; then
     echo "FAIL: $name"
