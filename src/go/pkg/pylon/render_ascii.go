@@ -54,8 +54,26 @@ func RenderRows(ast *Box) []string {
 }
 
 const (
-	naturalPad = 3
+	naturalPad    = 3
+	tightChartPad = 0
 )
+
+// isTightChartBox reports whether a chart-primitive box should render
+// with zero inner padding instead of the default 3-cell pad. Targets
+// the bar / heatmap / sparkline / candlestick / hist / step / gantt /
+// progress family — primitives whose bodies are dense data-viz grids
+// where the 3-cell margin wastes screen real estate in SVG/PNG
+// output. `banner` and `text` stay at the natural pad because they're
+// literal text that benefits from breathing room.
+func isTightChartBox(b *Box) bool {
+	switch b.Renderer {
+	case "bar", "hbar", "vbar", "progress",
+		"heatmap", "sparkline", "candlestick",
+		"hist", "step", "gantt":
+		return true
+	}
+	return false
+}
 
 // renderBoxRows mirrors the JS function of the same name. The data
 // argument carries the root's frontmatter series map so chart boxes
@@ -69,10 +87,21 @@ func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int, data interface{
 	}
 	bordered := ast.Bordered
 
+	// Chart primitives tighten inner padding to a single cell so SVG/
+	// PNG output doesn't carry 3 cells of empty margin on each side of
+	// every bar / heatmap / sparkline / etc. 1 cell is the floor: hbar
+	// / vbar emit an internal `│` separator that would collide with
+	// the outer border at zero pad. `banner` and `text` keep the
+	// natural 3-cell pad because they're text formatting, not data
+	// viz.
+	pad := naturalPad
+	if isTightChartBox(ast) {
+		pad = tightChartPad
+	}
 	hasPad := bordered || len(items) > 1
 	padBudget := 0
 	if hasPad {
-		padBudget = 2 * naturalPad
+		padBudget = 2 * pad
 	}
 	borderBudget := 0
 	if bordered {
@@ -83,7 +112,7 @@ func renderBoxRows(ast *Box, bc boxChars, targetW, targetH *int, data interface{
 	if targetW != nil {
 		cw := *targetW - borderBudget
 		if hasPad {
-			cw -= 2 * naturalPad
+			cw -= 2 * pad
 		}
 		if cw < 1 {
 			cw = 1

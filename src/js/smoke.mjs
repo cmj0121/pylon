@@ -197,7 +197,7 @@ const fixtures = [
       const bars = (o.match(/█/g) || []).length;
       return (
         bars >= 10 &&
-        o.includes("  apples") &&
+        o.includes("apples") &&
         o.includes("bananas") &&
         o.includes("(10)") &&
         o.includes("(20)")

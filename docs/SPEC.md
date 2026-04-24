@@ -132,12 +132,127 @@ Multiple top-level nodes stack vertically:
 (World)
 ```
 
-```txt
-   ┌───────────┐
-   │   Hello   │
-   └───────────┘
-       World
-```
+````txt
+        ┌───────────┐
+        │   Hello   │
+        └───────────┘
+             ```
+           ### Keys
+| Key     | Value type  | Desc
+| ------- | ----------- | ----
+| `size`  | `INT x INT` | Maxi
+| `theme` | identifier  | Pale
+           default
+, `ascii`, `dark`, `light`.
+| `data`  | list or map | One
+`size` caps the outer dimensio
+declared width wrap to a verti
+Unicode box-drawing glyphs for
+### YAML subset accepted by `d
+The `data:` parser is a narrow
+- **Block style only.** Flow s
+              `
+         ┌─────────┐
+         │   ...   │
+         └─────────┘
+         `, `{...}`
+         is rejected,
+except `y:` may take a flow-st
+             `y:
+       ┌─────────────┐
+       │   1, 2, 3   │
+       └─────────────┘
+              `
+to fit 2D shapes like `heatmap
+    arrays stay rejected.
+- **Spaces-only indent.** A ta
+rejects the whole block via to
+- **Scalars.** Numbers, double
+   trimmed, taken literally
+              .
+- **No reserved-word coercion.
+  `no` stay literal strings.
+- **Not supported.** Multiline
+           `|`, `>`
+          , anchors
+           `&`, `*`
+              ,
+           and tags
+             `!!`
+              .
+Unsupported shapes leave `data
+`Unsupported data: frontmatter
+       ### Data shapes
+Two shapes are accepted. A fla
+exposes each key as its own re
+     `@counter`, `@sales`
+              :
+           ```pylon
+             ---
+            data:
+           counter:
+            - x: 1
+            y: 10
+            sales:
+            - x: 1
+            y: 100
+             ---
+    ┌────────────────────┐
+    │ ⚠ @sales not found │
+    └────────────────────┘
+             ```
+Unquoted string `x` labels are
+      friendly default.
+           ## Nodes
+Nodes are the drawn units of a
+lines, nested nodes, or a flow
+             - `
+        ┌───────────┐
+        │   LABEL   │
+        └───────────┘
+` — bordered; the wrapper is d
+             - `
+            LABEL
+` — borderless; wrapper drops,
+        parent layout.
+        ### Alignment
+The alignment dash must be flu
+the dash and the bracket defea
+| Form      | Result
+| --------- | ----------------
+             | `
+          ┌───────┐
+          │   x   │
+          └───────┘
+        `   | Centered
+           default
+.
+             | `
+          ┌───────┐
+          │   x   │
+          └───────┘
+         ` | Centered
+     explicit both sides
+    .                   |
+             | `
+          ┌───────┐
+          │     x │
+          └───────┘
+      `  | Right-aligned
+left spring pushes content rig
+             . |
+             | `
+          ┌───────┐
+          │ x     │
+          └───────┘
+`  | Left-aligned.
+Multiple top-level nodes stack
+           ```pylon
+        ┌───────────┐
+        │   Hello   │
+        └───────────┘
+            World
+````
 
 ## Edges
 
@@ -156,9 +271,7 @@ A borderless node between two edge halves labels the edge:
 ```
 
 ```txt
-┌───────────┐               ┌─────────┐
-│   Alice   │──  friend  ──▶│   Bob   │
-└───────────┘               └─────────┘
+⚠ @sales: requires | renderer
 ```
 
 Bidirectional `<-- ( role ) -->` and reverse `<-- ( role ) --` both
@@ -331,11 +444,11 @@ data:
 ```
 
 ```txt
-┌───────────────────────────┐
-│   1 │ █████      (10) │   │
-│   2 │ ██████████ (20) │   │
-│   3 │ ████████   (15) │   │
-└───────────────────────────┘
+┌───────────────────┐
+│1 │ █████      (10)│
+│2 │ ██████████ (20)│
+│3 │ ████████   (15)│
+└───────────────────┘
 ```
 
 `hbar` uses a 10-cell bar-width budget by default. A tight `size:`
@@ -359,20 +472,20 @@ data:
 ```
 
 ```txt
-┌──────────────────┐
-│        █         │
-│        █         │
-│        █   █     │
-│        █   █     │
-│        █   █     │
-│    █   █   █     │
-│    █   █   █     │
-│    █   █   █     │
-│    █   █   █     │
-│    █   █   █     │
-│    1   2   3     │
-│   (10)(20)(15)   │
-└──────────────────┘
+┌────────────┐
+│     █      │
+│     █      │
+│     █   █  │
+│     █   █  │
+│     █   █  │
+│ █   █   █  │
+│ █   █   █  │
+│ █   █   █  │
+│ █   █   █  │
+│ █   █   █  │
+│ 1   2   3  │
+│(10)(20)(15)│
+└────────────┘
 ```
 
 `vbar` mirrors `hbar`'s 10-cell budget but applies it to the chart
@@ -415,9 +528,9 @@ value and render that instead.
 ```
 
 ```txt
-┌───────────────────────────────┐
-│   ███████████████░░░░░  75%   │
-└───────────────────────────────┘
+┌─────────────────────────┐
+│███████████████░░░░░  75%│
+└─────────────────────────┘
 ```
 
 ```pylon
@@ -435,11 +548,11 @@ data:
 ```
 
 ```txt
-┌──────────────────────────────────────┐
-│    build ████████████████████ 100%   │
-│     test ██████████████░░░░░░  70%   │
-│   deploy ██░░░░░░░░░░░░░░░░░░  10%   │
-└──────────────────────────────────────┘
+┌────────────────────────────────┐
+│ build ████████████████████ 100%│
+│  test ██████████████░░░░░░  70%│
+│deploy ██░░░░░░░░░░░░░░░░░░  10%│
+└────────────────────────────────┘
 ```
 
 `progress` accepts two input shapes. A literal number in `[0,100]`
@@ -476,12 +589,12 @@ data:
 ```
 
 ```txt
-┌───────────────┐
-│   Mon ░░▒▓█   │
-│   Tue  ▒▓█▒   │
-│   Wed ░▓█▓░   │
-│   Thu  ░▒░    │
-└───────────────┘
+┌─────────┐
+│Mon ░░▒▓█│
+│Tue  ▒▓█▒│
+│Wed ░▓█▓░│
+│Thu  ░▒░ │
+└─────────┘
 ```
 
 `heatmap` accepts an `@ref` pointing to `[{x, y:[n,...]}]` — a
@@ -521,9 +634,9 @@ data:
 ```
 
 ```txt
-┌───────────┐
-│   ▃▆▁█▅   │
-└───────────┘
+┌─────┐
+│▃▆▁█▅│
+└─────┘
 ```
 
 `sparkline` accepts an `@ref` pointing to `[{x,y}]` and renders a
@@ -580,17 +693,17 @@ data:
 ```
 
 ```txt
-┌─────────────────────┐
-│      │        █     │
-│      █     │  █     │
-│   │  █  │  ▒  █     │
-│   ▒  █  ─  ▒  │     │
-│   ▒  █  │  ▒        │
-│   ▒  │     ▒        │
-│   ▒        │        │
-│   │                 │
-│   MonTueWedThuFri   │
-└─────────────────────┘
+┌───────────────┐
+│   │        █  │
+│   █     │  █  │
+││  █  │  ▒  █  │
+│▒  █  ─  ▒  │  │
+│▒  █  │  ▒     │
+│▒  │     ▒     │
+│▒        │     │
+││              │
+│MonTueWedThuFri│
+└───────────────┘
 ```
 
 `candlestick` accepts an `@ref` pointing to `[{x, o, h, l, c}]` —
@@ -642,16 +755,16 @@ data:
 ```
 
 ```txt
-┌───────────┐
-│    │  █   │
-│    █ │█   │
-│   │█│▒█   │
-│   ▒█─▒│   │
-│   ▒█│▒    │
-│   ▒│ ▒    │
-│   ▒  │    │
-│   │       │
-└───────────┘
+┌─────┐
+│ │  █│
+│ █ │█│
+││█│▒█│
+│▒█─▒││
+│▒█│▒ │
+│▒│ ▒ │
+│▒  │ │
+││    │
+└─────┘
 ```
 
 Normalization is **global**: rows map across the series
@@ -686,17 +799,17 @@ data:
 ```
 
 ```txt
-┌──────────┐
-│    ██    │
-│    ██    │
-│    ██    │
-│    ██    │
-│    ███   │
-│    ███   │
-│   ████   │
-│   ████   │
-│   MISP   │
-└──────────┘
+┌────┐
+│ ██ │
+│ ██ │
+│ ██ │
+│ ██ │
+│ ███│
+│ ███│
+│████│
+│████│
+│MISP│
+└────┘
 ```
 
 `hist` accepts an `@ref` pointing to `[{x,y}]` where `y` is a
@@ -742,13 +855,13 @@ data:
 ```
 
 ```txt
-┌─────────────────┐
-│            ┌─   │
-│          ┌─┘    │
-│        ┌─┘      │
-│    ┌───┘        │
-│   ─┘            │
-└─────────────────┘
+┌───────────┐
+│         ┌─│
+│       ┌─┘ │
+│     ┌─┘   │
+│ ┌───┘     │
+│─┘         │
+└───────────┘
 ```
 
 `step` accepts an `@ref` pointing to `[{x,y}]` and renders a
@@ -797,12 +910,12 @@ data:
 ```
 
 ```txt
-┌───────────────────────────────┐
-│   spec █████                  │
-│   code    █████████           │
-│   test           ██████       │
-│   ship               ██████   │
-└───────────────────────────────┘
+┌─────────────────────────┐
+│spec █████               │
+│code    █████████        │
+│test           ██████    │
+│ship               ██████│
+└─────────────────────────┘
 ```
 
 `gantt` accepts an `@ref` pointing to `[{x, start, end}]` —

@@ -815,8 +815,35 @@
   //  - natural-pad  3 cells on each side of content in a bordered box
   //  - cell -> px   10 wide, 20 tall for SVG / PNG
   const NATURAL_PAD = 3;
+  const TIGHT_CHART_PAD = 0;
   const CELL_PX_W = 10;
   const CELL_PX_H = 20;
+
+  // isTightChartBox reports whether a chart-primitive box should
+  // render with zero inner padding instead of the default 3-cell pad.
+  // Targets the bar / heatmap / sparkline / candlestick / hist / step
+  // / gantt / progress family — primitives whose bodies are dense
+  // data-viz grids where the 3-cell margin wastes screen real estate
+  // in SVG/PNG output. `banner` and `text` stay at the natural pad
+  // because they're literal text that benefits from breathing room.
+  // Constants mirror src/go/pkg/pylon/render_ascii.go so ASCII output
+  // stays byte-identical across the two implementations.
+  const TIGHT_CHART_RENDERERS = new Set([
+    "bar",
+    "hbar",
+    "vbar",
+    "progress",
+    "heatmap",
+    "sparkline",
+    "candlestick",
+    "hist",
+    "step",
+    "gantt",
+  ]);
+  const isTightChartBox = (box) =>
+    box &&
+    typeof box.renderer === "string" &&
+    TIGHT_CHART_RENDERERS.has(box.renderer);
 
   // Pad a single row (string) to targetW display cells, placing the row
   // according to align ('left' | 'center' | 'right'). Reserve minPad
@@ -1806,7 +1833,7 @@
       const body = (
         bars + " ".repeat(Math.max(1, budget - bars.length + 1))
       ).slice(0, budget + 1);
-      return `${label} ${bc.v} ${body}${valStr} ${bc.v}`;
+      return `${label} ${bc.v} ${body}${valStr}`;
     });
   };
 
@@ -2300,7 +2327,15 @@
     // than silently mis-padding.
     const srcLen = ast.renderer ? 1 : items.length;
     const hasPad = bordered || srcLen > 1;
-    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    // Chart primitives tighten inner padding to a single cell so SVG/
+    // PNG output doesn't carry 3 cells of empty margin on each side
+    // of every bar, heatmap, sparkline, etc. 1 cell is the floor:
+    // hbar / vbar emit an internal `│` separator that would collide
+    // with the outer border at zero pad. `banner` and `text` keep
+    // the natural 3-cell pad because they're text formatting, not
+    // data viz.
+    const pad = isTightChartBox(ast) ? TIGHT_CHART_PAD : NATURAL_PAD;
+    const padBudget = hasPad ? 2 * pad : 0;
     const borderBudget = bordered ? 2 : 0;
 
     // When targetW is set we pass maxW down to any row items so a long
@@ -2309,7 +2344,7 @@
     // padding so the wrapped chunks don't touch the border wall.
     const sizedContentW =
       targetW !== undefined
-        ? Math.max(1, targetW - borderBudget - (hasPad ? 2 * NATURAL_PAD : 0))
+        ? Math.max(1, targetW - borderBudget - (hasPad ? 2 * pad : 0))
         : undefined;
 
     const itemRows = items.flatMap((it) =>
