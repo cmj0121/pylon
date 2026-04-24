@@ -314,6 +314,202 @@ func TestRenderSparkline_DuplicateXTolerated(t *testing.T) {
 	}
 }
 
+// TestRenderCandlestick_Basic locks a labelled, mixed bull/bear/doji
+// series byte-for-byte. Values chosen so Wed = bull (c > o), Tue =
+// bear (c < o), Thu = doji (c == o). Column width fits the widest
+// 3-char label; candle glyphs stick to the leftmost cell.
+func TestRenderCandlestick_Basic(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  q:",
+		"    - x: Mon",
+		"      o: 10",
+		"      h: 14",
+		"      l: 8",
+		"      c: 12",
+		"    - x: Tue",
+		"      o: 12",
+		"      h: 13",
+		"      l: 9",
+		"      c: 10",
+		"    - x: Wed",
+		"      o: 10",
+		"      h: 16",
+		"      l: 10",
+		"      c: 15",
+		"    - x: Thu",
+		"      o: 15",
+		"      h: 15",
+		"      l: 11",
+		"      c: 11",
+		"    - x: Fri",
+		"      o: 11",
+		"      h: 13",
+		"      l: 11",
+		"      c: 13",
+		"---",
+		"[ @q | candlestick ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	want := strings.Join([]string{
+		"┌─────────────────────┐",
+		"│         │           │",
+		"│         ▒  █        │",
+		"│   │     ▒  █        │",
+		"│   ▒  █  ▒  █  ▒     │",
+		"│   ▒  █  ▒  █  ▒     │",
+		"│   ▒  █  ▒           │",
+		"│   │  │              │",
+		"│   │                 │",
+		"│   MonTueWedThuFri   │",
+		"└─────────────────────┘",
+	}, "\n")
+	if got != want {
+		t.Errorf("candlestick basic mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
+	}
+}
+
+// TestRenderCandlestick_Compact asserts the compact layout: every x
+// is the empty string, column width collapses to 1, and the footer
+// row is suppressed. Same body-height contract as the labelled form.
+func TestRenderCandlestick_Compact(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  q:",
+		`    - x: ""`,
+		"      o: 10",
+		"      h: 14",
+		"      l: 8",
+		"      c: 12",
+		`    - x: ""`,
+		"      o: 12",
+		"      h: 13",
+		"      l: 9",
+		"      c: 10",
+		`    - x: ""`,
+		"      o: 10",
+		"      h: 16",
+		"      l: 10",
+		"      c: 15",
+		"---",
+		"[ @q | candlestick ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	lines := strings.Split(got, "\n")
+	// 8 body rows + 2 border rows = 10; no footer row.
+	if len(lines) != 10 {
+		t.Errorf("compact should have 10 rows (8 body + 2 borders), got %d:\n%s",
+			len(lines), got)
+	}
+	if strings.Contains(got, "x") || strings.Contains(got, "Mon") {
+		t.Errorf("compact should not carry any label text; got:\n%s", got)
+	}
+}
+
+// TestRenderCandlestick_Flat exercises the gMin == gMax branch: every
+// candle collapses to a single doji glyph on the bottom body row, the
+// remaining seven rows are blank.
+func TestRenderCandlestick_Flat(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"data:",
+		"  q:",
+		"    - x: A",
+		"      o: 5",
+		"      h: 5",
+		"      l: 5",
+		"      c: 5",
+		"    - x: B",
+		"      o: 5",
+		"      h: 5",
+		"      l: 5",
+		"      c: 5",
+		"    - x: C",
+		"      o: 5",
+		"      h: 5",
+		"      l: 5",
+		"      c: 5",
+		"---",
+		"[ @q | candlestick ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	if !strings.Contains(got, "───") {
+		t.Errorf("flat series should render three doji glyphs on one row; got:\n%s", got)
+	}
+	// None of the other candlestick glyphs should appear.
+	if strings.Contains(got, "│") && !strings.Contains(got, "│   ───") {
+		// `│` appearing outside the border (i.e., inside the grid) is a bug.
+		for _, line := range strings.Split(got, "\n") {
+			trimmed := strings.TrimPrefix(strings.TrimSuffix(line, "│"), "│")
+			if strings.Contains(trimmed, "│") {
+				t.Errorf("flat series should not paint any wicks; got:\n%s", got)
+				break
+			}
+		}
+	}
+	if strings.ContainsAny(got, "▒█") {
+		t.Errorf("flat series should not paint any bodies (all dojis); got:\n%s", got)
+	}
+}
+
+// TestRenderCandlestick_ASCII asserts the ASCII theme swaps in the
+// printable-only ramp (|, +, #, -) and keeps every other layout
+// decision identical to the default theme.
+func TestRenderCandlestick_ASCII(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"theme: ascii",
+		"data:",
+		"  q:",
+		"    - x: Mon",
+		"      o: 10",
+		"      h: 14",
+		"      l: 8",
+		"      c: 12",
+		"    - x: Tue",
+		"      o: 12",
+		"      h: 13",
+		"      l: 9",
+		"      c: 10",
+		"    - x: Wed",
+		"      o: 10",
+		"      h: 16",
+		"      l: 10",
+		"      c: 15",
+		"    - x: Thu",
+		"      o: 15",
+		"      h: 15",
+		"      l: 11",
+		"      c: 11",
+		"    - x: Fri",
+		"      o: 11",
+		"      h: 13",
+		"      l: 11",
+		"      c: 13",
+		"---",
+		"[ @q | candlestick ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	want := strings.Join([]string{
+		"+---------------------+",
+		"|         |           |",
+		"|         +  #        |",
+		"|   |     +  #        |",
+		"|   +  #  +  #  +     |",
+		"|   +  #  +  #  +     |",
+		"|   +  #  +           |",
+		"|   |  |              |",
+		"|   |                 |",
+		"|   MonTueWedThuFri   |",
+		"+---------------------+",
+	}, "\n")
+	if got != want {
+		t.Errorf("candlestick ASCII theme mismatch\n--- got ---\n%s\n--- want ---\n%s\n", got, want)
+	}
+}
+
 // TestRenderChart_DoesNotDisturbNormalBoxes is a regression guard:
 // normal (non-chart) boxes must render exactly as they did before
 // the chart dispatch was added.

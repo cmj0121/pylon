@@ -66,6 +66,8 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		return renderHeatmap(chartSeries(b, data), bc)
 	case "sparkline":
 		return renderSparkline(chartSeries(b, data), bc)
+	case "candlestick":
+		return renderCandlestick(chartSeries(b, data), bc)
 	}
 	return nil
 }

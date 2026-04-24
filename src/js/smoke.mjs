@@ -285,6 +285,68 @@ const fixtures = [
     // All-same y -> idx 0 for every cell; no full block.
     expect: (o) => o.includes("▁▁▁") && !o.includes("█"),
   },
+  {
+    name: "candlestick renderer paints body + wicks for mixed OHLC",
+    // A: bull (c>o), B: bear (c<o), C: doji (c==o).
+    src:
+      "---\ndata:\n  - x: A\n    o: 10\n    h: 15\n    l: 8\n    c: 14\n" +
+      "  - x: B\n    o: 14\n    h: 16\n    l: 6\n    c: 8\n" +
+      "  - x: C\n    o: 11\n    h: 13\n    l: 9\n    c: 11\n" +
+      "---\n[ @data | candlestick ]",
+    expect: (o) =>
+      !o.includes("⚠") &&
+      o.includes("▒") &&
+      o.includes("█") &&
+      o.includes("─"),
+  },
+  {
+    name: "candlestick renderer respects ASCII theme",
+    // Same OHLC mix but under theme: ascii; glyphs swap to + # - |.
+    src:
+      "---\ntheme: ascii\ndata:\n  - x: A\n    o: 10\n    h: 15\n    l: 8\n" +
+      "    c: 14\n  - x: B\n    o: 14\n    h: 16\n    l: 6\n    c: 8\n" +
+      "  - x: C\n    o: 11\n    h: 13\n    l: 9\n    c: 11\n" +
+      "---\n[ @data | candlestick ]",
+    expect: (o) =>
+      o.includes("+") &&
+      o.includes("#") &&
+      o.includes("-") &&
+      !o.includes("▒") &&
+      !o.includes("█") &&
+      !o.includes("│"),
+  },
+  {
+    name: "candlestick renderer compact mode has no footer",
+    // Both x == "" -> compact: width 1 per col, no footer row.
+    src:
+      '---\ndata:\n  - x: ""\n    o: 10\n    h: 18\n    l: 8\n    c: 15\n' +
+      '  - x: ""\n    o: 15\n    h: 16\n    l: 5\n    c: 7\n' +
+      "---\n[ @data | candlestick ]",
+    expect: (o) => {
+      // Exactly 8 body rows (lines starting with the box side-wall).
+      const bodyLines = o.split("\n").filter((l) => l.startsWith("│"));
+      if (bodyLines.length !== 8) return false;
+      // Inner content must only carry candle glyphs / spaces / wicks --
+      // no label characters leak in compact mode.
+      const allowed = new Set([" ", "│", "▒", "█", "─"]);
+      for (const l of bodyLines) {
+        const inner = l.slice(1, -1);
+        for (const ch of inner) if (!allowed.has(ch)) return false;
+      }
+      return true;
+    },
+  },
+  {
+    name: "candlestick renderer rejects invalid OHLC inline",
+    // h < c (15) violates h >= max(o, c); renderer short-circuits.
+    src:
+      "---\ndata:\n  - x: A\n    o: 10\n    h: 5\n    l: 8\n    c: 15\n" +
+      "---\n[ @data | candlestick ]",
+    expect: (o) =>
+      o.includes("⚠ candlestick: invalid ohlc") &&
+      !o.includes("▒") &&
+      !o.includes("█"),
+  },
 ];
 
 let failed = 0;

@@ -1,0 +1,30 @@
+---
+data:
+  q:
+    - x: Mon
+      o: 10
+      h: 14
+      l: 8
+      c: 12
+    - x: Tue
+      o: 12
+      h: 13
+      l: 9
+      c: 10
+    - x: Wed
+      o: 10
+      h: 16
+      l: 10
+      c: 15
+    - x: Thu
+      o: 15
+      h: 15
+      l: 11
+      c: 11
+    - x: Fri
+      o: 11
+      h: 13
+      l: 11
+      c: 13
+---
+[ @q | candlestick ]

@@ -1,0 +1,20 @@
+---
+data:
+  q:
+    - x: A
+      o: 5
+      h: 5
+      l: 5
+      c: 5
+    - x: B
+      o: 5
+      h: 5
+      l: 5
+      c: 5
+    - x: C
+      o: 5
+      h: 5
+      l: 5
+      c: 5
+---
+[ @q | candlestick ]
