@@ -815,8 +815,35 @@
   //  - natural-pad  3 cells on each side of content in a bordered box
   //  - cell -> px   10 wide, 20 tall for SVG / PNG
   const NATURAL_PAD = 3;
-  const CELL_PX_W = 10;
-  const CELL_PX_H = 20;
+  const TIGHT_CHART_PAD = 1;
+  const CELL_PX_W = 5;
+  const CELL_PX_H = 13;
+
+  // isTightChartBox reports whether a chart-primitive box should
+  // render with zero inner padding instead of the default 3-cell pad.
+  // Targets the bar / heatmap / sparkline / candlestick / hist / step
+  // / gantt / progress family — primitives whose bodies are dense
+  // data-viz grids where the 3-cell margin wastes screen real estate
+  // in SVG/PNG output. `banner` and `text` stay at the natural pad
+  // because they're literal text that benefits from breathing room.
+  // Constants mirror src/go/pkg/pylon/render_ascii.go so ASCII output
+  // stays byte-identical across the two implementations.
+  const TIGHT_CHART_RENDERERS = new Set([
+    "bar",
+    "hbar",
+    "vbar",
+    "progress",
+    "heatmap",
+    "sparkline",
+    "candlestick",
+    "hist",
+    "step",
+    "gantt",
+  ]);
+  const isTightChartBox = (box) =>
+    box &&
+    typeof box.renderer === "string" &&
+    TIGHT_CHART_RENDERERS.has(box.renderer);
 
   // Pad a single row (string) to targetW display cells, placing the row
   // according to align ('left' | 'center' | 'right'). Reserve minPad
@@ -1806,7 +1833,7 @@
       const body = (
         bars + " ".repeat(Math.max(1, budget - bars.length + 1))
       ).slice(0, budget + 1);
-      return `${label} ${bc.v} ${body}${valStr} ${bc.v}`;
+      return `${label} ${bc.v} ${body}${valStr}`;
     });
   };
 
@@ -2300,7 +2327,15 @@
     // than silently mis-padding.
     const srcLen = ast.renderer ? 1 : items.length;
     const hasPad = bordered || srcLen > 1;
-    const padBudget = hasPad ? 2 * NATURAL_PAD : 0;
+    // Chart primitives tighten inner padding to a single cell so SVG/
+    // PNG output doesn't carry 3 cells of empty margin on each side
+    // of every bar, heatmap, sparkline, etc. 1 cell is the floor:
+    // hbar / vbar emit an internal `│` separator that would collide
+    // with the outer border at zero pad. `banner` and `text` keep
+    // the natural 3-cell pad because they're text formatting, not
+    // data viz.
+    const pad = isTightChartBox(ast) ? TIGHT_CHART_PAD : NATURAL_PAD;
+    const padBudget = hasPad ? 2 * pad : 0;
     const borderBudget = bordered ? 2 : 0;
 
     // When targetW is set we pass maxW down to any row items so a long
@@ -2309,7 +2344,7 @@
     // padding so the wrapped chunks don't touch the border wall.
     const sizedContentW =
       targetW !== undefined
-        ? Math.max(1, targetW - borderBudget - (hasPad ? 2 * NATURAL_PAD : 0))
+        ? Math.max(1, targetW - borderBudget - (hasPad ? 2 * pad : 0))
         : undefined;
 
     const itemRows = items.flatMap((it) =>
@@ -2563,6 +2598,85 @@
   const FONT_STACK_MONO = "ui-monospace, Menlo, Consolas, monospace";
   const FONT_SIZE_PX = CELL_PX_H * 0.7;
 
+  // svgBlockOpacity maps a Unicode block-shade glyph to the opacity
+  // its <rect> should render at. Returns null for any other rune —
+  // that rune stays as text in the SVG output. Opacities mirror the
+  // Unicode reference ramp: `░`=25%, `▒`=50%, `▓`=75%, `█`=100%.
+  const svgBlockOpacity = (ch) => {
+    switch (ch) {
+      case "█":
+        return 1;
+      case "▓":
+        return 0.75;
+      case "▒":
+        return 0.5;
+      case "░":
+        return 0.25;
+    }
+    return null;
+  };
+
+  // emitSVGRow walks a single ASCII row and appends a mix of <rect>
+  // and <text> elements to the svg root. Unicode block glyphs
+  // (`█▓▒░`) coalesce into contiguous <rect> runs rendered with
+  // opacity matching the ramp step, so chart bars show as clean
+  // solid / dithered blocks instead of font characters whose
+  // antialiasing differs by renderer. Every other cell becomes a
+  // <text> segment at its natural position.
+  const emitSVGRow = (svg, ns, row, x0, rowIdx) => {
+    const yTop = rowIdx * CELL_PX_H;
+    const baseline = (rowIdx + 0.5) * CELL_PX_H;
+    const flushText = (start, end) => {
+      if (start >= end) return;
+      const seg = row.slice(start, end);
+      if (seg.trim() === "") return;
+      const t = document.createElementNS(ns, "text");
+      t.setAttribute("x", x0 + start * CELL_PX_W);
+      t.setAttribute("y", baseline);
+      t.setAttribute("text-anchor", "start");
+      t.setAttribute("dominant-baseline", "middle");
+      t.setAttribute("font-family", "monospace");
+      t.setAttribute("font-size", FONT_SIZE_PX);
+      // textLength + lengthAdjust pin this segment to the cell grid
+      // so text glyphs don't drift rightward and overlap the next
+      // <rect>. Cascadia's natural advance at 10px is ~6px while
+      // CELL_PX_W is 5; without this the mismatch accumulates across
+      // the row.
+      t.setAttribute("textLength", (end - start) * CELL_PX_W);
+      t.setAttribute("lengthAdjust", "spacingAndGlyphs");
+      t.setAttribute("style", "white-space: pre");
+      t.setAttribute("xml:space", "preserve");
+      t.setAttribute("fill", "currentColor");
+      t.textContent = seg;
+      svg.append(t);
+    };
+    let i = 0;
+    let textStart = 0;
+    while (i < row.length) {
+      const op = svgBlockOpacity(row[i]);
+      if (op === null) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < row.length && svgBlockOpacity(row[j]) === op) {
+        j++;
+      }
+      flushText(textStart, i);
+      const rect = document.createElementNS(ns, "rect");
+      rect.setAttribute("x", x0 + i * CELL_PX_W);
+      rect.setAttribute("y", yTop);
+      rect.setAttribute("width", (j - i) * CELL_PX_W);
+      rect.setAttribute("height", CELL_PX_H);
+      rect.setAttribute("fill", "currentColor");
+      if (op < 1) rect.setAttribute("opacity", op);
+      svg.append(rect);
+      i = j;
+      textStart = j;
+    }
+    flushText(textStart, row.length);
+  };
+
   const drawCanvasBorder = (ctx, w, h, color) => {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = color;
@@ -2691,25 +2805,9 @@
         svg.append(rect);
       }
       const range = paintableRange(ast, rows);
-      const x = ast.bordered ? CELL_PX_W : 0;
+      const x0 = ast.bordered ? CELL_PX_W : 0;
       for (let i = range.first; i < range.last; i++) {
-        const t = document.createElementNS(ns, "text");
-        t.setAttribute("x", x);
-        t.setAttribute("y", (i + 0.5) * CELL_PX_H);
-        t.setAttribute("text-anchor", "start");
-        t.setAttribute("dominant-baseline", "middle");
-        t.setAttribute("font-family", "monospace");
-        t.setAttribute("font-size", FONT_SIZE_PX);
-        // SVG2 deprecates xml:space; modern browsers look at the CSS
-        // white-space property to keep runs of spaces from collapsing.
-        // Without this, rows that differ in leading-whitespace (e.g.
-        // "(a) -> [b]" where row 0 is padding+box and row 1 starts
-        // with the label) slide left and the box borders misalign.
-        t.setAttribute("style", "white-space: pre");
-        t.setAttribute("xml:space", "preserve");
-        t.setAttribute("fill", "currentColor");
-        t.textContent = paintableBody(ast, rows[i]);
-        svg.append(t);
+        emitSVGRow(svg, ns, paintableBody(ast, rows[i]), x0, i);
       }
       return svg;
     },

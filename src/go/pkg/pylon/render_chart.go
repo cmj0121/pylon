@@ -170,7 +170,7 @@ func renderHBar(series []map[string]interface{}, bc boxChars, budgetW int) []str
 		body := strings.Repeat(barGlyph, cells) + strings.Repeat(" ", budget)
 		body = clipRow(body, budget+1)
 		out[i] = padRow(labels[i], labelW, AlignRight, 0) + " " + bc.v + " " +
-			body + padRow(values[i], valueW, AlignRight, 0) + " " + bc.v
+			body + padRow(values[i], valueW, AlignRight, 0)
 	}
 	return out
 }
