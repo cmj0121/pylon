@@ -665,6 +665,40 @@ func TestRenderGantt_Size(t *testing.T) {
 	}
 }
 
+// TestRenderGantt_SizeFloor pins the 5-cell minimum budget.
+// With labels up to 6 chars ("deploy") and `size: 15x6`, the math
+// gives max(5, 15 - 6 - 4) = 5 — the floor binds exactly while the
+// outer box stays wide enough to hold 3 left-pad + 6 label + 1 gap
+// + 5 bar cells. A narrower size would let the outer box clip the
+// bar area regardless of what gantt computes; the floor is a
+// gantt-side guarantee, not a layout guarantee.
+func TestRenderGantt_SizeFloor(t *testing.T) {
+	src := strings.Join([]string{
+		"---",
+		"size: 15x6",
+		"data:",
+		"  tasks:",
+		"    - x: design",
+		"      start: 0",
+		"      end: 10",
+		"    - x: deploy",
+		"      start: 3",
+		"      end: 10",
+		"---",
+		"[ @tasks | gantt ]",
+	}, "\n")
+	got := RenderASCII(Parse(src))
+	// Floor at 5 cells; design's 0..10 spans the entire maxEnd so it
+	// occupies all 5 cells — a run of 5 block glyphs must appear.
+	if !strings.Contains(got, strings.Repeat(barGlyph, 5)) {
+		t.Errorf("expected at least one 5-cell run under size:15x6 floor; got:\n%s", got)
+	}
+	// Reject the default 20-cell budget slipping through.
+	if strings.Contains(got, strings.Repeat(barGlyph, 20)) {
+		t.Errorf("didn't expect a 20-cell run (would mean default budget still applied):\n%s", got)
+	}
+}
+
 // TestRenderChart_DoesNotDisturbNormalBoxes is a regression guard:
 // normal (non-chart) boxes must render exactly as they did before
 // the chart dispatch was added.

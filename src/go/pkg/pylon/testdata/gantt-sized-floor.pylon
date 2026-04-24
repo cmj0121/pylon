@@ -1,0 +1,12 @@
+---
+size: 15x6
+data:
+  tasks:
+    - x: design
+      start: 0
+      end: 10
+    - x: deploy
+      start: 3
+      end: 10
+---
+[ @tasks | gantt ]
