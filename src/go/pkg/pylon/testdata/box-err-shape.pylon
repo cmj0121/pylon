@@ -1,0 +1,10 @@
+---
+data:
+  bad:
+    - x: A
+      min: 1
+      q1: 2
+      med: 3
+      max: 5
+---
+[ @bad | box ]
