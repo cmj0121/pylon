@@ -279,7 +279,7 @@ silent.
 
 ## Available renderers
 
-Pylon 0.3.0 ships eighteen renderers. Unknown names surface an inline
+Pylon ships eighteen renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
 <!-- markdownlint-disable MD013 -->
