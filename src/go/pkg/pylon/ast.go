@@ -188,6 +188,17 @@ type Meta struct {
 	// ColorSpan covers the line where `color: ...` was declared; zero
 	// Span when Color is nil.
 	ColorSpan Span
+
+	// Banner selects the font used by the `| banner` renderer. Empty
+	// string falls back to the theme-driven default (ANSI shadow under
+	// default theme, `#`+space under `theme: ascii`). The only v1
+	// recognized value is "monospace", which selects the uniform-width
+	// `█`-based glyph table; under `theme: ascii` the renderer
+	// substitutes `█→#` at the row level.
+	Banner string
+	// BannerSpan covers the line where `banner: ...` was declared; zero
+	// Span when Banner is empty.
+	BannerSpan Span
 }
 
 // MetaError is a single frontmatter parse error with the source span

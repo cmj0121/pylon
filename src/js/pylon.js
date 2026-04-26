@@ -275,6 +275,11 @@
         // to default behaviour. Mirrors Go's parseFrontmatter.
         if (raw === "true") meta.color = true;
         else if (raw === "false") meta.color = false;
+      } else if (key === "banner") {
+        // Selects the `| banner` font. v1 recognizes only `monospace`;
+        // anything else falls through to the theme-driven default.
+        // Silent-ignore policy mirrors `theme:` and `color:`.
+        if (raw === "monospace") meta.banner = "monospace";
       }
       i++;
     }
@@ -2036,6 +2041,195 @@
     "-": ["      ", "      ", "█████╗", "╚════╝", "      ", "      "],
     "'": ["██╗", "██║", "╚═╝", "   ", "   ", "   "],
     '"': ["██╗ ██╗", "██║ ██║", "╚═╝ ╚═╝", "       ", "       ", "       "],
+    // v0.2 symbol extension. Glyphs match bannerFontMonospace's 8w × 6h
+    // `█`+space shape rather than the pyfiglet ansi_shadow style of the
+    // alphanumerics above — see the matching note in the Go source.
+    "#": [
+      " ██ ██  ",
+      " ██ ██  ",
+      "███████ ",
+      " ██ ██  ",
+      "███████ ",
+      " ██ ██  ",
+    ],
+    $: ["   ██   ", " █████  ", "██ █    ", " ████   ", "   █ ██ ", " █████  "],
+    "%": [
+      "██   ██ ",
+      "██  ██  ",
+      "   ██   ",
+      "  ██    ",
+      " ██  ██ ",
+      "██   ██ ",
+    ],
+    "&": [
+      " ████   ",
+      "██  ██  ",
+      " ███    ",
+      "██ ██   ",
+      "██  ██  ",
+      " ███ ██ ",
+    ],
+    "(": [
+      "   ██   ",
+      "  ██    ",
+      " ██     ",
+      " ██     ",
+      "  ██    ",
+      "   ██   ",
+    ],
+    ")": [
+      " ██     ",
+      "  ██    ",
+      "   ██   ",
+      "   ██   ",
+      "  ██    ",
+      " ██     ",
+    ],
+    "*": [
+      "        ",
+      "██  ██  ",
+      " ████   ",
+      "██████  ",
+      " ████   ",
+      "██  ██  ",
+    ],
+    "+": [
+      "        ",
+      "   ██   ",
+      "   ██   ",
+      " ██████ ",
+      "   ██   ",
+      "   ██   ",
+    ],
+    "/": [
+      "     ██ ",
+      "    ██  ",
+      "   ██   ",
+      "  ██    ",
+      " ██     ",
+      "██      ",
+    ],
+    ":": [
+      "        ",
+      "   ██   ",
+      "   ██   ",
+      "        ",
+      "   ██   ",
+      "   ██   ",
+    ],
+    ";": [
+      "        ",
+      "   ██   ",
+      "   ██   ",
+      "        ",
+      "   ██   ",
+      "  ██    ",
+    ],
+    "<": [
+      "     ██ ",
+      "   ██   ",
+      " ██     ",
+      " ██     ",
+      "   ██   ",
+      "     ██ ",
+    ],
+    "=": [
+      "        ",
+      "        ",
+      " ██████ ",
+      "        ",
+      " ██████ ",
+      "        ",
+    ],
+    ">": [
+      "██      ",
+      "  ██    ",
+      "    ██  ",
+      "    ██  ",
+      "  ██    ",
+      "██      ",
+    ],
+    "@": [
+      " █████  ",
+      "██   ██ ",
+      "██ ███  ",
+      "██ █ ██ ",
+      "██      ",
+      " █████  ",
+    ],
+    "[": [
+      " ████   ",
+      " ██     ",
+      " ██     ",
+      " ██     ",
+      " ██     ",
+      " ████   ",
+    ],
+    "\\": [
+      "██      ",
+      " ██     ",
+      "  ██    ",
+      "   ██   ",
+      "    ██  ",
+      "     ██ ",
+    ],
+    "]": [
+      "   ████ ",
+      "     ██ ",
+      "     ██ ",
+      "     ██ ",
+      "     ██ ",
+      "   ████ ",
+    ],
+    "^": [
+      "   ██   ",
+      "  ████  ",
+      " ██ ██  ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    _: ["        ", "        ", "        ", "        ", "        ", "███████ "],
+    "`": [
+      " ██     ",
+      "  ██    ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    "{": [
+      "   ██   ",
+      "  ██    ",
+      " ███    ",
+      " ███    ",
+      "  ██    ",
+      "   ██   ",
+    ],
+    "|": [
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+    ],
+    "}": [
+      " ██     ",
+      "  ██    ",
+      "   ███  ",
+      "   ███  ",
+      "  ██    ",
+      " ██     ",
+    ],
+    "~": [
+      "        ",
+      "        ",
+      " ██  ██ ",
+      "██  ██  ",
+      "        ",
+      "        ",
+    ],
   };
 
   const bannerFontASCII = {
@@ -2083,6 +2277,492 @@
     "-": ["     ", "     ", "     ", "#####", "     ", "     "],
     "'": [" # ", " # ", "   ", "   ", "   ", "   "],
     '"': ["# #", "# #", "   ", "   ", "   ", "   "],
+    // v0.2 symbol extension. Same shapes as the bannerFontDefault
+    // additions, with `█→#` substituted, so the default↔ascii pair
+    // invariant in TestBannerFontTables holds for every key.
+    "#": [
+      " ## ##  ",
+      " ## ##  ",
+      "####### ",
+      " ## ##  ",
+      "####### ",
+      " ## ##  ",
+    ],
+    $: ["   ##   ", " #####  ", "## #    ", " ####   ", "   # ## ", " #####  "],
+    "%": [
+      "##   ## ",
+      "##  ##  ",
+      "   ##   ",
+      "  ##    ",
+      " ##  ## ",
+      "##   ## ",
+    ],
+    "&": [
+      " ####   ",
+      "##  ##  ",
+      " ###    ",
+      "## ##   ",
+      "##  ##  ",
+      " ### ## ",
+    ],
+    "(": [
+      "   ##   ",
+      "  ##    ",
+      " ##     ",
+      " ##     ",
+      "  ##    ",
+      "   ##   ",
+    ],
+    ")": [
+      " ##     ",
+      "  ##    ",
+      "   ##   ",
+      "   ##   ",
+      "  ##    ",
+      " ##     ",
+    ],
+    "*": [
+      "        ",
+      "##  ##  ",
+      " ####   ",
+      "######  ",
+      " ####   ",
+      "##  ##  ",
+    ],
+    "+": [
+      "        ",
+      "   ##   ",
+      "   ##   ",
+      " ###### ",
+      "   ##   ",
+      "   ##   ",
+    ],
+    "/": [
+      "     ## ",
+      "    ##  ",
+      "   ##   ",
+      "  ##    ",
+      " ##     ",
+      "##      ",
+    ],
+    ":": [
+      "        ",
+      "   ##   ",
+      "   ##   ",
+      "        ",
+      "   ##   ",
+      "   ##   ",
+    ],
+    ";": [
+      "        ",
+      "   ##   ",
+      "   ##   ",
+      "        ",
+      "   ##   ",
+      "  ##    ",
+    ],
+    "<": [
+      "     ## ",
+      "   ##   ",
+      " ##     ",
+      " ##     ",
+      "   ##   ",
+      "     ## ",
+    ],
+    "=": [
+      "        ",
+      "        ",
+      " ###### ",
+      "        ",
+      " ###### ",
+      "        ",
+    ],
+    ">": [
+      "##      ",
+      "  ##    ",
+      "    ##  ",
+      "    ##  ",
+      "  ##    ",
+      "##      ",
+    ],
+    "@": [
+      " #####  ",
+      "##   ## ",
+      "## ###  ",
+      "## # ## ",
+      "##      ",
+      " #####  ",
+    ],
+    "[": [
+      " ####   ",
+      " ##     ",
+      " ##     ",
+      " ##     ",
+      " ##     ",
+      " ####   ",
+    ],
+    "\\": [
+      "##      ",
+      " ##     ",
+      "  ##    ",
+      "   ##   ",
+      "    ##  ",
+      "     ## ",
+    ],
+    "]": [
+      "   #### ",
+      "     ## ",
+      "     ## ",
+      "     ## ",
+      "     ## ",
+      "   #### ",
+    ],
+    "^": [
+      "   ##   ",
+      "  ####  ",
+      " ## ##  ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    _: ["        ", "        ", "        ", "        ", "        ", "####### "],
+    "`": [
+      " ##     ",
+      "  ##    ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    "{": [
+      "   ##   ",
+      "  ##    ",
+      " ###    ",
+      " ###    ",
+      "  ##    ",
+      "   ##   ",
+    ],
+    "|": [
+      "   ##   ",
+      "   ##   ",
+      "   ##   ",
+      "   ##   ",
+      "   ##   ",
+      "   ##   ",
+    ],
+    "}": [
+      " ##     ",
+      "  ##    ",
+      "   ###  ",
+      "   ###  ",
+      "  ##    ",
+      " ##     ",
+    ],
+    "~": [
+      "        ",
+      "        ",
+      " ##  ## ",
+      "##  ##  ",
+      "        ",
+      "        ",
+    ],
+  };
+
+  // bannerFontMonospace is the uniform-width `█`-based glyph table
+  // selected by frontmatter `banner: monospace`. Every glyph is exactly
+  // 8 runes wide × 6 rows tall — col 8 is reserved as inter-letter pad
+  // and is always blank. Vertical strokes are 2 cells thick. Runes are
+  // restricted to {`█`, ` `} so the renderer can do a total-function
+  // `█→#` substitution at the row level when `theme: ascii` is active,
+  // avoiding a paired ASCII table. Must stay byte-for-byte identical
+  // to bannerFontMonospace in src/go/pkg/pylon/render_banner_fonts.go.
+  const bannerFontMonospace = {
+    A: ["  ██    ", " ████   ", "██  ██  ", "██████  ", "██  ██  ", "██  ██  "],
+    B: ["██████  ", "██  ██  ", "██████  ", "██  ██  ", "██  ██  ", "██████  "],
+    C: [" █████  ", "██   ██ ", "██      ", "██      ", "██   ██ ", " █████  "],
+    D: ["██████  ", "██  ██  ", "██  ██  ", "██  ██  ", "██  ██  ", "██████  "],
+    E: ["██████  ", "██      ", "█████   ", "██      ", "██      ", "██████  "],
+    F: ["██████  ", "██      ", "█████   ", "██      ", "██      ", "██      "],
+    G: [" █████  ", "██   ██ ", "██      ", "██  ███ ", "██   ██ ", " █████  "],
+    H: ["██  ██  ", "██  ██  ", "██████  ", "██  ██  ", "██  ██  ", "██  ██  "],
+    I: ["██████  ", "  ██    ", "  ██    ", "  ██    ", "  ██    ", "██████  "],
+    J: ["    ██  ", "    ██  ", "    ██  ", "    ██  ", "██  ██  ", " ████   "],
+    K: ["██   ██ ", "██  ██  ", "█████   ", "██  ██  ", "██   ██ ", "██   ██ "],
+    L: ["██      ", "██      ", "██      ", "██      ", "██      ", "██████  "],
+    M: ["██   ██ ", "███ ███ ", "██ █ ██ ", "██   ██ ", "██   ██ ", "██   ██ "],
+    N: ["██   ██ ", "███  ██ ", "████ ██ ", "██ ████ ", "██  ███ ", "██   ██ "],
+    O: [" █████  ", "██   ██ ", "██   ██ ", "██   ██ ", "██   ██ ", " █████  "],
+    P: ["██████  ", "██  ██  ", "██████  ", "██      ", "██      ", "██      "],
+    Q: [" █████  ", "██   ██ ", "██   ██ ", "██   ██ ", "██  ██  ", " ███ ██ "],
+    R: ["██████  ", "██  ██  ", "██████  ", "██ ██   ", "██  ██  ", "██   ██ "],
+    S: [" █████  ", "██      ", " ████   ", "    ██  ", "    ██  ", "█████   "],
+    T: ["███████ ", "   ██   ", "   ██   ", "   ██   ", "   ██   ", "   ██   "],
+    U: ["██  ██  ", "██  ██  ", "██  ██  ", "██  ██  ", "██  ██  ", " ████   "],
+    V: ["██   ██ ", "██   ██ ", " ██ ██  ", " ██ ██  ", "  ███   ", "        "],
+    W: ["██   ██ ", "██   ██ ", "██   ██ ", "██ █ ██ ", "███ ███ ", "██   ██ "],
+    X: ["██   ██ ", " ██ ██  ", "  ███   ", "  ███   ", " ██ ██  ", "██   ██ "],
+    Y: ["██   ██ ", " ██ ██  ", "  ████  ", "   ██   ", "   ██   ", "   ██   "],
+    Z: ["██████  ", "    ██  ", "   ██   ", "  ██    ", " ██     ", "██████  "],
+    0: [" ████   ", "██  ██  ", "██ ███  ", "███ ██  ", "██  ██  ", " ████   "],
+    1: ["  ██    ", " ███    ", "  ██    ", "  ██    ", "  ██    ", "██████  "],
+    2: [" ████   ", "██  ██  ", "    ██  ", "   ██   ", " ██     ", "██████  "],
+    3: [" █████  ", "    ██  ", "  ███   ", "    ██  ", "██  ██  ", " ████   "],
+    4: ["   ███  ", "  ████  ", " ██ ██  ", "██████  ", "    ██  ", "    ██  "],
+    5: ["██████  ", "██      ", "█████   ", "    ██  ", "██  ██  ", " ████   "],
+    6: [" ████   ", "██      ", "█████   ", "██  ██  ", "██  ██  ", " ████   "],
+    7: ["██████  ", "    ██  ", "   ██   ", "  ██    ", "  ██    ", "  ██    "],
+    8: [" ████   ", "██  ██  ", " ████   ", "██  ██  ", "██  ██  ", " ████   "],
+    9: [" ████   ", "██  ██  ", "██  ██  ", " █████  ", "    ██  ", " ████   "],
+    " ": [
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    ".": [
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+      "  ██    ",
+      "  ██    ",
+    ],
+    ",": [
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+      "  ██    ",
+      " ██     ",
+    ],
+    "!": [
+      "  ██    ",
+      "  ██    ",
+      "  ██    ",
+      "  ██    ",
+      "        ",
+      "  ██    ",
+    ],
+    "?": [
+      " ████   ",
+      "██  ██  ",
+      "   ██   ",
+      "  ██    ",
+      "        ",
+      "  ██    ",
+    ],
+    "-": [
+      "        ",
+      "        ",
+      "        ",
+      "██████  ",
+      "        ",
+      "        ",
+    ],
+    "'": [
+      "  ██    ",
+      "  ██    ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    '"': [
+      "██  ██  ",
+      "██  ██  ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    "#": [
+      " ██ ██  ",
+      " ██ ██  ",
+      "███████ ",
+      " ██ ██  ",
+      "███████ ",
+      " ██ ██  ",
+    ],
+    $: ["   ██   ", " █████  ", "██ █    ", " ████   ", "   █ ██ ", " █████  "],
+    "%": [
+      "██   ██ ",
+      "██  ██  ",
+      "   ██   ",
+      "  ██    ",
+      " ██  ██ ",
+      "██   ██ ",
+    ],
+    "&": [
+      " ████   ",
+      "██  ██  ",
+      " ███    ",
+      "██ ██   ",
+      "██  ██  ",
+      " ███ ██ ",
+    ],
+    "(": [
+      "   ██   ",
+      "  ██    ",
+      " ██     ",
+      " ██     ",
+      "  ██    ",
+      "   ██   ",
+    ],
+    ")": [
+      " ██     ",
+      "  ██    ",
+      "   ██   ",
+      "   ██   ",
+      "  ██    ",
+      " ██     ",
+    ],
+    "*": [
+      "        ",
+      "██  ██  ",
+      " ████   ",
+      "██████  ",
+      " ████   ",
+      "██  ██  ",
+    ],
+    "+": [
+      "        ",
+      "   ██   ",
+      "   ██   ",
+      " ██████ ",
+      "   ██   ",
+      "   ██   ",
+    ],
+    "/": [
+      "     ██ ",
+      "    ██  ",
+      "   ██   ",
+      "  ██    ",
+      " ██     ",
+      "██      ",
+    ],
+    ":": [
+      "        ",
+      "   ██   ",
+      "   ██   ",
+      "        ",
+      "   ██   ",
+      "   ██   ",
+    ],
+    ";": [
+      "        ",
+      "   ██   ",
+      "   ██   ",
+      "        ",
+      "   ██   ",
+      "  ██    ",
+    ],
+    "<": [
+      "     ██ ",
+      "   ██   ",
+      " ██     ",
+      " ██     ",
+      "   ██   ",
+      "     ██ ",
+    ],
+    "=": [
+      "        ",
+      "        ",
+      " ██████ ",
+      "        ",
+      " ██████ ",
+      "        ",
+    ],
+    ">": [
+      "██      ",
+      "  ██    ",
+      "    ██  ",
+      "    ██  ",
+      "  ██    ",
+      "██      ",
+    ],
+    "@": [
+      " █████  ",
+      "██   ██ ",
+      "██ ███  ",
+      "██ █ ██ ",
+      "██      ",
+      " █████  ",
+    ],
+    "[": [
+      " ████   ",
+      " ██     ",
+      " ██     ",
+      " ██     ",
+      " ██     ",
+      " ████   ",
+    ],
+    "\\": [
+      "██      ",
+      " ██     ",
+      "  ██    ",
+      "   ██   ",
+      "    ██  ",
+      "     ██ ",
+    ],
+    "]": [
+      "   ████ ",
+      "     ██ ",
+      "     ██ ",
+      "     ██ ",
+      "     ██ ",
+      "   ████ ",
+    ],
+    "^": [
+      "   ██   ",
+      "  ████  ",
+      " ██ ██  ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    _: ["        ", "        ", "        ", "        ", "        ", "███████ "],
+    "`": [
+      " ██     ",
+      "  ██    ",
+      "        ",
+      "        ",
+      "        ",
+      "        ",
+    ],
+    "{": [
+      "   ██   ",
+      "  ██    ",
+      " ███    ",
+      " ███    ",
+      "  ██    ",
+      "   ██   ",
+    ],
+    "|": [
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+      "   ██   ",
+    ],
+    "}": [
+      " ██     ",
+      "  ██    ",
+      "   ███  ",
+      "   ███  ",
+      "  ██    ",
+      " ██     ",
+    ],
+    "~": [
+      "        ",
+      "        ",
+      " ██  ██ ",
+      "██  ██  ",
+      "        ",
+      "        ",
+    ],
   };
 
   const chartRenderers = {
@@ -2104,13 +2784,25 @@
 
     // Literal-text banner. `text` is pre-uppercased by applyChartRenderer;
     // unknown runes fall back to '?' so fixtures stay deterministic.
-    banner(text, bc) {
+    // Font selection has two axes: frontmatter `banner:` picks the
+    // family (default vs. monospace); when monospace is selected the
+    // theme-driven `bc` only decides whether to substitute `█→#` on
+    // the finalized rows.
+    banner(text, bc, bannerFont) {
       if (text === "") return ["", "", "", "", "", ""];
-      const font = bc === ASCII_BOX ? bannerFontASCII : bannerFontDefault;
+      const monospace = bannerFont === "monospace";
+      const font = monospace
+        ? bannerFontMonospace
+        : bc === ASCII_BOX
+          ? bannerFontASCII
+          : bannerFontDefault;
       const rows = ["", "", "", "", "", ""];
       for (const r of text) {
         const glyph = font[r] || font["?"];
         for (let i = 0; i < 6; i++) rows[i] += glyph[i];
+      }
+      if (monospace && bc === ASCII_BOX) {
+        for (let i = 0; i < 6; i++) rows[i] = rows[i].replace(/█/g, "#");
       }
       return rows;
     },
@@ -2217,7 +2909,15 @@
   // `dataMap` is the resolved frontmatter `meta.data` (flat list or
   // map of named series). `budgetW` is the content-width budget the
   // containing box is willing to devote to the renderer's visuals.
-  const applyChartRenderer = (box, dataMap, bc, budgetW, size, colorOn) => {
+  const applyChartRenderer = (
+    box,
+    dataMap,
+    bc,
+    budgetW,
+    size,
+    colorOn,
+    bannerFont,
+  ) => {
     const name = box.renderer;
     const handler = chartRenderers[name];
     const items = box.items || [];
@@ -2229,7 +2929,11 @@
     // Banner is literal-text only: concatenate Text items, uppercase,
     // and hand to the renderer. DataRef children are silently ignored.
     if (name === "banner") {
-      const rendered = handler(collectTextContent(items).toUpperCase(), bc);
+      const rendered = handler(
+        collectTextContent(items).toUpperCase(),
+        bc,
+        bannerFont,
+      );
       return rendered.map((r) => ({ type: "text", content: r }));
     }
 
@@ -2336,7 +3040,15 @@
   // Walk the AST *before* rendering; for any box carrying a renderer
   // tag, rewrite its items. Also flags any box that holds a dataRef
   // WITHOUT a renderer -- that's the "bare @ref" error case.
-  const applyChartRenderers = (item, dataMap, bc, budgetW, size, colorOn) => {
+  const applyChartRenderers = (
+    item,
+    dataMap,
+    bc,
+    budgetW,
+    size,
+    colorOn,
+    bannerFont,
+  ) => {
     if (!item || typeof item !== "object") return;
     if (item.type === "box") {
       if (item.renderer) {
@@ -2347,6 +3059,7 @@
           budgetW,
           size,
           colorOn,
+          bannerFont,
         );
       } else if (Array.isArray(item.items)) {
         const bareRef = item.items.find((it) => it && it.type === "dataRef");
@@ -2360,10 +3073,26 @@
     }
     if (Array.isArray(item.items)) {
       for (const child of item.items)
-        applyChartRenderers(child, dataMap, bc, budgetW, size, colorOn);
+        applyChartRenderers(
+          child,
+          dataMap,
+          bc,
+          budgetW,
+          size,
+          colorOn,
+          bannerFont,
+        );
     }
     if (item.type === "edge" && item.label) {
-      applyChartRenderers(item.label, dataMap, bc, budgetW, size, colorOn);
+      applyChartRenderers(
+        item.label,
+        dataMap,
+        bc,
+        budgetW,
+        size,
+        colorOn,
+        bannerFont,
+      );
     }
   };
 
@@ -2642,7 +3371,16 @@
     // users who want color add `color: true` to their source; the
     // showcase example demonstrates the opt-in.
     const colorOn = ast.meta?.color === true;
-    applyChartRenderers(ast, ast.meta?.data, bc, barBudget, size, colorOn);
+    const bannerFont = ast.meta?.banner;
+    applyChartRenderers(
+      ast,
+      ast.meta?.data,
+      bc,
+      barBudget,
+      size,
+      colorOn,
+      bannerFont,
+    );
     const rows = renderBoxRows(ast, bc, {
       targetW: size?.w,
       targetH: size?.h,

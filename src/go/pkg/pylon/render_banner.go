@@ -3,17 +3,31 @@ package pylon
 import "strings"
 
 // bannerRows is the fixed height of a banner renderer's output.
-// Every glyph in both font tables is exactly this many rows so the
-// concatenation below is a straight row-by-row append.
+// Every glyph in all three font tables (default, ascii, monospace)
+// is exactly this many rows so the concatenation below is a straight
+// row-by-row append.
 const bannerRows = 6
 
 // renderBanner turns a box's literal text content into block letters.
 // Input is uppercased before lookup; unknown runes fall back to the
 // '?' glyph so fixtures stay deterministic.
+//
+// Font selection has two axes. The frontmatter `banner:` key picks the
+// family (default vs. monospace); when monospace is selected the
+// theme-driven `bc` only decides whether to substitute `█→#` on the
+// finalized rows. When banner is unset the existing default↔ascii pair
+// is consulted as before.
 func renderBanner(b *Box, bc boxChars) []string {
-	font := bannerFontDefault
-	if bc == asciiBox {
+	monospace := b.Meta.Banner == "monospace"
+
+	var font map[rune][6]string
+	switch {
+	case monospace:
+		font = bannerFontMonospace
+	case bc == asciiBox:
 		font = bannerFontASCII
+	default:
+		font = bannerFontDefault
 	}
 
 	var sb strings.Builder
@@ -38,6 +52,13 @@ func renderBanner(b *Box, bc boxChars) []string {
 	out := make([]string, bannerRows)
 	for i := range rows {
 		out[i] = rows[i].String()
+	}
+	if monospace && bc == asciiBox {
+		// Pure-`█` palette → total-function substitution to `#`. Done
+		// once per finalized row instead of per glyph.
+		for i := range out {
+			out[i] = strings.ReplaceAll(out[i], "█", "#")
+		}
 	}
 	return out
 }

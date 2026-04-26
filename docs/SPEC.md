@@ -53,12 +53,13 @@ data:
 
 ### Keys
 
-| Key     | Value type    | Description                                                                           |
-| ------- | ------------- | ------------------------------------------------------------------------------------- |
-| `size`  | `INT x INT`   | Maximum outer width x height in cells. Content stays tight when smaller.              |
-| `theme` | identifier    | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.                    |
-| `data`  | list or map   | One or more `{x, y}` series for `@ref` / renderer boxes.                              |
-| `color` | `true\|false` | Source-file preference for ANSI color in ASCII output. See [ANSI color](#ansi-color). |
+| Key      | Value type    | Description                                                                           |
+| -------- | ------------- | ------------------------------------------------------------------------------------- |
+| `size`   | `INT x INT`   | Maximum outer width x height in cells. Content stays tight when smaller.              |
+| `theme`  | identifier    | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.                    |
+| `data`   | list or map   | One or more `{x, y}` series for `@ref` / renderer boxes.                              |
+| `color`  | `true\|false` | Source-file preference for ANSI color in ASCII output. See [ANSI color](#ansi-color). |
+| `banner` | identifier    | Font for `\| banner` boxes. `monospace` selects uniform-width glyphs.                 |
 
 `size` caps the outer dimensions; flow chains that would exceed the
 declared width wrap to a vertical stack. `theme: ascii` swaps the
@@ -400,14 +401,58 @@ an error.
 ```
 
 `banner` renders the box's literal text as 6-row block letters.
-Input is uppercased before lookup; the supported set is `A-Z`,
-`0-9`, space, and `. , ! ? - ' "`. Unknown runes fall back to the
-`?` glyph. `theme: ascii` swaps the ANSI-shadow box-drawing glyphs
-for a `#` + space grid.
+Input is uppercased before lookup. Default and `ascii`-theme
+banners cover every printable ASCII codepoint from 0x20 (space)
+through 0x7E (tilde) — the alphanumerics use the pyfiglet
+`ansi_shadow` style and the symbols use the same uniform block
+shapes as `banner: monospace` (visual mismatch is a known
+trade-off for full coverage). Unknown runes outside the printable
+ASCII range fall back to the `?` glyph. `theme: ascii` swaps the
+ANSI-shadow box-drawing glyphs for a `#` + space grid.
 
 v1 is literal-string only. A `@ref` inside a `| banner` box is
 silently ignored — a future release will resolve `@ref` to its
 value and render that instead.
+
+#### `banner: monospace`
+
+The `banner: monospace` frontmatter key switches the renderer to a
+uniform-width `█`-based block-letter font where every glyph occupies
+the same cell width. Use it when you want grid-aligned banner output —
+columns line up cleanly across letters, which the ANSI-shadow default
+does not guarantee. The covered rune set matches the default font:
+every printable ASCII codepoint from 0x20 (space) through 0x7E
+(tilde). Unknown runes outside that range still fall back to the `?`
+glyph.
+
+```pylon
+---
+banner: monospace
+---
+[ Pylon | banner ]
+```
+
+```txt
+┌──────────────────────────────────────────────┐
+│   ██████  ██   ██ ██       █████  ██   ██    │
+│   ██  ██   ██ ██  ██      ██   ██ ███  ██    │
+│   ██████    ████  ██      ██   ██ ████ ██    │
+│   ██         ██   ██      ██   ██ ██ ████    │
+│   ██         ██   ██      ██   ██ ██  ███    │
+│   ██         ██   ██████   █████  ██   ██    │
+└──────────────────────────────────────────────┘
+```
+
+Under `theme: ascii` + `banner: monospace`, the renderer substitutes
+`█` → `#` on the rendered rows so the ASCII theme stays valid (no
+Unicode block characters leak through). The pair is the only opt-in
+combination: `monospace` defines the layout, `theme: ascii` swaps the
+fill glyph.
+
+When the `banner:` key is absent the existing default ↔ ascii pair
+applies — ANSI-shadow under the default theme, `#` + space grid under
+`theme: ascii`. Unrecognized values for `banner:` silently fall through
+to that default.
 
 ### progress
 
