@@ -99,16 +99,52 @@ data:
       y: 2
     - x: E
       y: 4
+  goals:
+    - x: Sales
+      y: 70
+      target: 100
+    - x: Stock
+      y: 25
+      target: 80
+  scores:
+    - x: A
+      min: 5
+      q1: 12
+      med: 18
+      q3: 24
+      max: 30
+    - x: B
+      min: 8
+      q1: 14
+      med: 20
+      q3: 28
+      max: 35
+  hits:
+    - date: "2026-01-05"
+      y: 3
+    - date: "2026-01-12"
+      y: 5
+    - date: "2026-01-15"
+      y: 1
+    - date: "2026-01-20"
+      y: 4
 ---
 [ Pylon | banner ]
 [ @sales | bar ]
 [ @sales | vbar ]
 [ @trend | sparkline ]
+[ @trend | line ]
+[ @trend | area ]
+[ @trend | scatter ]
 [ @activity | heatmap ]
+[ @activity | sbar ]
 [ @week | candlestick ]
 [ @letters | hist ]
 [ @signups | step ]
 [ @sprint | gantt ]
+[ @goals | bullet ]
+[ @scores | box ]
+[ @hits | calendar ]
 [ 75 | progress ]
 [ foo | mystery ]
 [- @sales | text -]
