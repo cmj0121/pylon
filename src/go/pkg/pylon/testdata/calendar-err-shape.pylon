@@ -1,0 +1,7 @@
+---
+data:
+  bad:
+    - date: "not-a-date"
+      y: 1
+---
+[ @bad | calendar ]

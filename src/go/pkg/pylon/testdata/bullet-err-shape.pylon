@@ -1,0 +1,8 @@
+---
+data:
+  bad:
+    - x: A
+      y: 5
+      target: oops
+---
+[ @bad | bullet ]
