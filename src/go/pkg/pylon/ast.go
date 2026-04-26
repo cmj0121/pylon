@@ -29,12 +29,17 @@ const (
 // the source was `[...]`; false means `(...)`. Name is populated when
 // the body carried a `:: ident` declaration. Renderer is populated
 // when the body carried a trailing `| renderer` marker (first wins).
+// RendererArg is populated when the renderer marker carried a `:arg`
+// suffix — `| banner:digital` parses as Renderer="banner",
+// RendererArg="digital". The arg is renderer-specific; in v1 only the
+// banner renderer interprets it (font selector).
 type Box struct {
-	Bordered bool
-	Align    string
-	Name     string
-	Renderer string
-	Items    []Node
+	Bordered    bool
+	Align       string
+	Name        string
+	Renderer    string
+	RendererArg string
+	Items       []Node
 	// Meta is populated on the root box only; for nested boxes it is
 	// a zero-value Meta.
 	Meta Meta

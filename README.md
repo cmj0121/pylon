@@ -128,7 +128,7 @@ catalogue, and error model.
 
 ## Learn more
 
-- [`examples/`](examples/) — twenty standalone sample files,
+- [`examples/`](examples/) — twenty-one standalone sample files,
   one per feature, plus [`showcase.pylon`](examples/showcase.pylon)
   demonstrating every primitive in one source.
 - [`docs/SPEC.md`](docs/SPEC.md) — specification reference.

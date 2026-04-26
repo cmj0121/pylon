@@ -135,7 +135,7 @@ var (
 	dataRefIdentRe  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
 	edgeRe          = regexp.MustCompile(`^<?-+>?`)
 	dashOnlyRe      = regexp.MustCompile(`^-+$`)
-	rendererTrailRe = regexp.MustCompile(`\s+\|\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+\|\s+[A-Za-z_][A-Za-z0-9_]*)*\s*$`)
+	rendererTrailRe = regexp.MustCompile(`\s+\|\s+([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_-]*))?(?:\s+\|\s+[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_-]*)?)*\s*$`)
 )
 
 // parseItems turns the inner content of a box into a slice of child
@@ -352,9 +352,16 @@ func parseBracketedNode(src *Source) *Box {
 		name = clean[m[2]:m[3]]
 		body = strings.TrimRight(clean[:m[0]], " \t")
 	}
-	var renderer string
+	var renderer, rendererArg string
 	if m := rendererTrailRe.FindStringSubmatchIndex(body); m != nil {
 		renderer = body[m[2]:m[3]]
+		// Group 2 captures the optional `:arg` suffix on the FIRST
+		// renderer pipe. Subsequent pipes (chained renderers) are
+		// matched by the outer non-capturing group and discarded —
+		// only the first renderer wins by existing convention.
+		if m[4] >= 0 {
+			rendererArg = body[m[4]:m[5]]
+		}
 		body = strings.TrimRight(body[:m[0]], " \t")
 	}
 
@@ -386,6 +393,7 @@ func parseBracketedNode(src *Source) *Box {
 		// so the AST stays faithful, but the ASCII renderer ignores it
 		// and renders items normally.
 		box.Renderer = renderer
+		box.RendererArg = rendererArg
 	}
 	return box
 }

@@ -59,7 +59,7 @@ data:
 | `theme`  | identifier    | Palette / glyph set: `simple` (default), `ascii`, `dark`, `light`.                    |
 | `data`   | list or map   | One or more `{x, y}` series for `@ref` / renderer boxes.                              |
 | `color`  | `true\|false` | Source-file preference for ANSI color in ASCII output. See [ANSI color](#ansi-color). |
-| `banner` | identifier    | Font for `\| banner` boxes. `monospace` selects uniform-width glyphs.                 |
+| `banner` | identifier    | Default font for `\| banner` boxes: `monospace`, `digital`, or `mini`.                |
 
 `size` caps the outer dimensions; flow chains that would exceed the
 declared width wrap to a vertical stack. `theme: ascii` swaps the
@@ -414,16 +414,33 @@ v1 is literal-string only. A `@ref` inside a `| banner` box is
 silently ignored — a future release will resolve `@ref` to its
 value and render that instead.
 
-#### `banner: monospace`
+#### Selecting a font
 
-The `banner: monospace` frontmatter key switches the renderer to a
-uniform-width `█`-based block-letter font where every glyph occupies
-the same cell width. Use it when you want grid-aligned banner output —
-columns line up cleanly across letters, which the ANSI-shadow default
-does not guarantee. The covered rune set matches the default font:
-every printable ASCII codepoint from 0x20 (space) through 0x7E
-(tilde). Unknown runes outside that range still fall back to the `?`
-glyph.
+Three pure-`█` banner fonts ship in addition to the default ANSI-shadow
+font: `monospace`, `digital`, and `mini`. Pick a font two ways:
+
+- **Per-box** — `[ TEXT | banner:FONT ]` overrides the font for that
+  banner only. Use this when one image needs to mix multiple fonts
+  (e.g. a `digital` headline above a `mini` subtitle).
+- **Frontmatter** — `banner: FONT` picks the image-wide default. Every
+  `| banner` box without a per-box `:FONT` arg uses this font.
+
+Resolution order: per-box arg → frontmatter `banner:` → theme dispatch
+(ANSI-shadow under default, `#` + space under `theme: ascii`). Unknown
+font names silently fall through, matching how `theme:`, `size:`, and
+`color:` swallow malformed input.
+
+All three pure-`█` fonts cover every printable ASCII codepoint from
+`0x20` through `0x7E`. Under `theme: ascii` the renderer substitutes
+`█` → `#` on the rendered rows so the ASCII theme stays valid for any
+font choice.
+
+##### `monospace`
+
+Uniform-width `█`-based block-letter font where every glyph occupies
+the same cell width (8 cells). Use it when you want grid-aligned
+banner output — columns line up cleanly across letters, which the
+ANSI-shadow default does not guarantee.
 
 ```pylon
 ---
@@ -443,16 +460,46 @@ banner: monospace
 └──────────────────────────────────────────────┘
 ```
 
-Under `theme: ascii` + `banner: monospace`, the renderer substitutes
-`█` → `#` on the rendered rows so the ASCII theme stays valid (no
-Unicode block characters leak through). The pair is the only opt-in
-combination: `monospace` defines the layout, `theme: ascii` swaps the
-fill glyph.
+##### `digital`
 
-When the `banner:` key is absent the existing default ↔ ascii pair
-applies — ANSI-shadow under the default theme, `#` + space grid under
-`theme: ascii`. Unrecognized values for `banner:` silently fall through
-to that default.
+7-segment LCD-style font, 6 cells wide × 6 rows tall. Single-thick
+strokes; digits are literal 7-segment shapes, letters are stylized
+approximations. Use it for status displays, scoreboards, retro UI.
+
+```pylon
+[ Pylon 0.2 | banner:digital ]
+```
+
+```txt
+┌────────────────────────────────────────────────────────────┐
+│   █████ █   █ █     █████ █   █       █████       █████    │
+│   █   █ █   █ █     █   █ ██  █       █   █           █    │
+│   █████ █████ █     █   █ █ █ █       █  ██       █████    │
+│   █         █ █     █   █ █  ██       █ █ █       █        │
+│   █         █ █     █   █ █   █       ██  █       █        │
+│   █         █ █████ █████ █   █       █████   █   █████    │
+└────────────────────────────────────────────────────────────┘
+```
+
+##### `mini`
+
+Compact 1-thick-stroke font, 5 cells wide × 6 rows tall. Use it for
+inline-label banners or whenever screen space is tight.
+
+```pylon
+[ Pylon 0.2 | banner:mini ]
+```
+
+```txt
+┌───────────────────────────────────────────────────┐
+│   ███  █  █ █     ██  █  █       ██        ██     │
+│   █  █ █  █ █    █  █ ██ █      █  █      █  █    │
+│   ███   ██  █    █  █ █ ██      █ ██        █     │
+│   █      █  █    █  █ █  █      ██ █       █      │
+│   █      █  █    █  █ █  █      █  █      █       │
+│   █      █  ████  ██  █  █       ██   █   ████    │
+└───────────────────────────────────────────────────┘
+```
 
 ### progress
 
