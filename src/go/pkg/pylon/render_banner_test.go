@@ -111,3 +111,96 @@ func checkPureBlockFont(t *testing.T, name string, font map[rune][6]string, want
 		}
 	}
 }
+
+// TestBannerFontASCIIIsPureASCII pins that bannerFontASCII contains
+// only printable ASCII (no chars >= 0x80). The default font mixes
+// EAW-narrow ASCII spaces with EAW-ambiguous box-drawing chars, which
+// produces visually misaligned rows when rendered in CJK / EAW-wide
+// contexts (see SPEC banner section). The ASCII font is the
+// recommended workaround precisely because every char is narrow —
+// rows render at uniform visual width in any East Asian width mode.
+// Adding a non-ASCII char to bannerFontASCII would silently break
+// that property; this test guards against the regression.
+func TestBannerFontASCIIIsPureASCII(t *testing.T) {
+	for r, glyph := range bannerFontASCII {
+		for i, row := range glyph {
+			for _, c := range row {
+				if c >= 0x80 {
+					t.Errorf("bannerFontASCII[%q] row %d: rune %q (U+%04X) is non-ASCII; "+
+						"the ASCII font is the EAW-uniform fallback and must stay narrow-only",
+						r, i, c, c)
+				}
+			}
+		}
+	}
+}
+
+// TestRenderBannerASCIIThemeIsPureASCII covers the EAW-uniform
+// guarantee end-to-end: render the worked-example "Pylon" through
+// every banner font under `theme: ascii` and assert the output
+// contains zero chars >= 0x80. This verifies both the table palette
+// (already asserted by TestBannerFontMonospace/Digital/Mini) and
+// the renderer's `█→#` substitution path actually deliver pure-ASCII
+// output. A regression in either layer (a non-`█` glyph leaking
+// through, or the substitution silently dropping a row) trips this
+// test. SPEC promises this property for every font under ascii
+// theme; this test is the runtime enforcement.
+func TestRenderBannerASCIIThemeIsPureASCII(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"default", "---\ntheme: ascii\n---\n[ Pylon | banner ]"},
+		{"monospace", "---\ntheme: ascii\nbanner: monospace\n---\n[ Pylon | banner ]"},
+		{"digital", "---\ntheme: ascii\n---\n[ Pylon | banner:digital ]"},
+		{"mini", "---\ntheme: ascii\n---\n[ Pylon | banner:mini ]"},
+	}
+	for _, tc := range cases {
+		out := RenderASCII(Parse(tc.src))
+		for i, row := range strings.Split(out, "\n") {
+			for j, c := range row {
+				if c >= 0x80 {
+					t.Errorf("[%s] row %d col %d: rune %q (U+%04X) is non-ASCII under theme:ascii; "+
+						"every banner font must yield pure-ASCII output under ascii theme to stay EAW-uniform",
+						tc.name, i, j, c, c)
+				}
+			}
+		}
+	}
+}
+
+// TestRenderBannerASCIIThemeRowsAreUniformWidth is the direct
+// EAW-alignment guarantee: render the worked-example "Pylon"
+// through every banner font under `theme: ascii` and assert all
+// six rendered banner rows have the same rune count. Equal
+// rune-count + pure ASCII (the previous test) ⇒ equal display
+// width in any East Asian width context. The default font without
+// `theme: ascii` deliberately fails this property — see issue #1 —
+// which is why this test only covers the ascii-theme paths.
+func TestRenderBannerASCIIThemeRowsAreUniformWidth(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"default", "---\ntheme: ascii\n---\n[ Pylon | banner ]"},
+		{"monospace", "---\ntheme: ascii\nbanner: monospace\n---\n[ Pylon | banner ]"},
+		{"digital", "---\ntheme: ascii\n---\n[ Pylon | banner:digital ]"},
+		{"mini", "---\ntheme: ascii\n---\n[ Pylon | banner:mini ]"},
+	}
+	for _, tc := range cases {
+		out := RenderASCII(Parse(tc.src))
+		rows := strings.Split(out, "\n")
+		if len(rows) == 0 {
+			t.Errorf("[%s]: empty render", tc.name)
+			continue
+		}
+		want := utf8.RuneCountInString(rows[0])
+		for i, row := range rows {
+			if got := utf8.RuneCountInString(row); got != want {
+				t.Errorf("[%s] row %d width %d, want %d (row=%q); "+
+					"banner rows under theme:ascii must be uniform-width to stay EAW-aligned",
+					tc.name, i, got, want, row)
+			}
+		}
+	}
+}
