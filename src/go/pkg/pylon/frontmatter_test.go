@@ -205,3 +205,32 @@ func TestFrontmatterColor(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// TestFrontmatterBanner asserts Meta.Banner picks up `banner: monospace`
+// and stays empty when the key is absent or carries an unrecognized
+// value — same silent-ignore policy as `theme:`, `size:`, and `color:`.
+func TestFrontmatterBanner(t *testing.T) {
+	cases := []struct {
+		src     string
+		want    string
+		wantSet bool
+	}{
+		{"---\nbanner: monospace\n---\n[ X | banner ]", "monospace", true},
+		{"---\nbanner: ansi-shadow\n---\n[ X | banner ]", "", false},
+		{"---\nbanner: mono\n---\n[ X | banner ]", "", false},
+		{"---\nbanner: Monospace\n---\n[ X | banner ]", "", false},
+		{"---\n---\n[ X | banner ]", "", false},
+		{"[ X | banner ]", "", false},
+	}
+	for _, tc := range cases {
+		root := Parse(tc.src)
+		if got := root.Meta.Banner; got != tc.want {
+			t.Errorf("Meta.Banner = %q, want %q for %q", got, tc.want, tc.src)
+		}
+		hasSpan := root.Meta.BannerSpan != (Span{})
+		if hasSpan != tc.wantSet {
+			t.Errorf("Meta.BannerSpan set=%v, want %v for %q",
+				hasSpan, tc.wantSet, tc.src)
+		}
+	}
+}

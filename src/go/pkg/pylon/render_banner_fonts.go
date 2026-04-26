@@ -1,14 +1,19 @@
 package pylon
 
-// Banner glyph tables. Both maps MUST carry the same key set; the
-// renderer falls back to '?' for any miss so a missing key in one
-// theme would silently diverge from the other. bannerFontDefault is
-// generated from pyfiglet's ansi_shadow with hand-crafted space /
-// apostrophe / double-quote (those render empty upstream).
-// bannerFontASCII is a hand-rolled `#` + space grid for terminals
-// that can't render box-drawing glyphs. Each rune's rows are
-// padded to equal inner width so direct concatenation lays out
+// Banner glyph tables. The default↔ascii pair MUST carry the same
+// key set; the renderer falls back to '?' for any miss so a missing
+// key in one theme would silently diverge from the other.
+// bannerFontDefault is generated from pyfiglet's ansi_shadow with
+// hand-crafted space / apostrophe / double-quote (those render empty
+// upstream). bannerFontASCII is a hand-rolled `#` + space grid for
+// terminals that can't render box-drawing glyphs. Each rune's rows
+// are padded to equal inner width so direct concatenation lays out
 // cleanly without per-glyph width juggling.
+//
+// bannerFontMonospace stands alone — it does not pair with another
+// table. Selected via frontmatter `banner: monospace`, its uniform
+// 8-cell width and pure `█`+space palette let the renderer derive
+// the ASCII variant by row-level `█→#` substitution at render time.
 
 // bannerFontDefault maps each supported rune to its 6-row glyph in
 // the ANSI Shadow style. Every entry has rows of equal inner width.
@@ -724,5 +729,367 @@ var bannerFontASCII = map[rune][6]string{
 		"   ",
 		"   ",
 		"   ",
+	},
+}
+
+// bannerFontMonospace is the uniform-width `█`-based glyph table
+// selected by frontmatter `banner: monospace`. Every glyph is exactly
+// 8 runes wide × 6 rows tall — col 8 is reserved as inter-letter pad
+// and is always blank. Vertical strokes are 2 cells thick for visual
+// heft. Runes are restricted to {`█`, ` `} so renderBanner can do a
+// total-function `█→#` substitution at the row level when the active
+// theme is `ascii`, avoiding the need for a paired ASCII table.
+var bannerFontMonospace = map[rune][6]string{
+	'A': {
+		"  ██    ",
+		" ████   ",
+		"██  ██  ",
+		"██████  ",
+		"██  ██  ",
+		"██  ██  ",
+	},
+	'B': {
+		"██████  ",
+		"██  ██  ",
+		"██████  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██████  ",
+	},
+	'C': {
+		" █████  ",
+		"██   ██ ",
+		"██      ",
+		"██      ",
+		"██   ██ ",
+		" █████  ",
+	},
+	'D': {
+		"██████  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██████  ",
+	},
+	'E': {
+		"██████  ",
+		"██      ",
+		"█████   ",
+		"██      ",
+		"██      ",
+		"██████  ",
+	},
+	'F': {
+		"██████  ",
+		"██      ",
+		"█████   ",
+		"██      ",
+		"██      ",
+		"██      ",
+	},
+	'G': {
+		" █████  ",
+		"██   ██ ",
+		"██      ",
+		"██  ███ ",
+		"██   ██ ",
+		" █████  ",
+	},
+	'H': {
+		"██  ██  ",
+		"██  ██  ",
+		"██████  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██  ██  ",
+	},
+	'I': {
+		"██████  ",
+		"  ██    ",
+		"  ██    ",
+		"  ██    ",
+		"  ██    ",
+		"██████  ",
+	},
+	'J': {
+		"    ██  ",
+		"    ██  ",
+		"    ██  ",
+		"    ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'K': {
+		"██   ██ ",
+		"██  ██  ",
+		"█████   ",
+		"██  ██  ",
+		"██   ██ ",
+		"██   ██ ",
+	},
+	'L': {
+		"██      ",
+		"██      ",
+		"██      ",
+		"██      ",
+		"██      ",
+		"██████  ",
+	},
+	'M': {
+		"██   ██ ",
+		"███ ███ ",
+		"██ █ ██ ",
+		"██   ██ ",
+		"██   ██ ",
+		"██   ██ ",
+	},
+	'N': {
+		"██   ██ ",
+		"███  ██ ",
+		"████ ██ ",
+		"██ ████ ",
+		"██  ███ ",
+		"██   ██ ",
+	},
+	'O': {
+		" █████  ",
+		"██   ██ ",
+		"██   ██ ",
+		"██   ██ ",
+		"██   ██ ",
+		" █████  ",
+	},
+	'P': {
+		"██████  ",
+		"██  ██  ",
+		"██████  ",
+		"██      ",
+		"██      ",
+		"██      ",
+	},
+	'Q': {
+		" █████  ",
+		"██   ██ ",
+		"██   ██ ",
+		"██   ██ ",
+		"██  ██  ",
+		" ███ ██ ",
+	},
+	'R': {
+		"██████  ",
+		"██  ██  ",
+		"██████  ",
+		"██ ██   ",
+		"██  ██  ",
+		"██   ██ ",
+	},
+	'S': {
+		" █████  ",
+		"██      ",
+		" ████   ",
+		"    ██  ",
+		"    ██  ",
+		"█████   ",
+	},
+	'T': {
+		"███████ ",
+		"   ██   ",
+		"   ██   ",
+		"   ██   ",
+		"   ██   ",
+		"   ██   ",
+	},
+	'U': {
+		"██  ██  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██  ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'V': {
+		"██   ██ ",
+		"██   ██ ",
+		" ██ ██  ",
+		" ██ ██  ",
+		"  ███   ",
+		"        ",
+	},
+	'W': {
+		"██   ██ ",
+		"██   ██ ",
+		"██   ██ ",
+		"██ █ ██ ",
+		"███ ███ ",
+		"██   ██ ",
+	},
+	'X': {
+		"██   ██ ",
+		" ██ ██  ",
+		"  ███   ",
+		"  ███   ",
+		" ██ ██  ",
+		"██   ██ ",
+	},
+	'Y': {
+		"██   ██ ",
+		" ██ ██  ",
+		"  ████  ",
+		"   ██   ",
+		"   ██   ",
+		"   ██   ",
+	},
+	'Z': {
+		"██████  ",
+		"    ██  ",
+		"   ██   ",
+		"  ██    ",
+		" ██     ",
+		"██████  ",
+	},
+	'0': {
+		" ████   ",
+		"██  ██  ",
+		"██ ███  ",
+		"███ ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'1': {
+		"  ██    ",
+		" ███    ",
+		"  ██    ",
+		"  ██    ",
+		"  ██    ",
+		"██████  ",
+	},
+	'2': {
+		" ████   ",
+		"██  ██  ",
+		"    ██  ",
+		"   ██   ",
+		" ██     ",
+		"██████  ",
+	},
+	'3': {
+		" █████  ",
+		"    ██  ",
+		"  ███   ",
+		"    ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'4': {
+		"   ███  ",
+		"  ████  ",
+		" ██ ██  ",
+		"██████  ",
+		"    ██  ",
+		"    ██  ",
+	},
+	'5': {
+		"██████  ",
+		"██      ",
+		"█████   ",
+		"    ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'6': {
+		" ████   ",
+		"██      ",
+		"█████   ",
+		"██  ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'7': {
+		"██████  ",
+		"    ██  ",
+		"   ██   ",
+		"  ██    ",
+		"  ██    ",
+		"  ██    ",
+	},
+	'8': {
+		" ████   ",
+		"██  ██  ",
+		" ████   ",
+		"██  ██  ",
+		"██  ██  ",
+		" ████   ",
+	},
+	'9': {
+		" ████   ",
+		"██  ██  ",
+		"██  ██  ",
+		" █████  ",
+		"    ██  ",
+		" ████   ",
+	},
+	' ': {
+		"        ",
+		"        ",
+		"        ",
+		"        ",
+		"        ",
+		"        ",
+	},
+	'.': {
+		"        ",
+		"        ",
+		"        ",
+		"        ",
+		"  ██    ",
+		"  ██    ",
+	},
+	',': {
+		"        ",
+		"        ",
+		"        ",
+		"        ",
+		"  ██    ",
+		" ██     ",
+	},
+	'!': {
+		"  ██    ",
+		"  ██    ",
+		"  ██    ",
+		"  ██    ",
+		"        ",
+		"  ██    ",
+	},
+	'?': {
+		" ████   ",
+		"██  ██  ",
+		"   ██   ",
+		"  ██    ",
+		"        ",
+		"  ██    ",
+	},
+	'-': {
+		"        ",
+		"        ",
+		"        ",
+		"██████  ",
+		"        ",
+		"        ",
+	},
+	'\'': {
+		"  ██    ",
+		"  ██    ",
+		"        ",
+		"        ",
+		"        ",
+		"        ",
+	},
+	'"': {
+		"██  ██  ",
+		"██  ██  ",
+		"        ",
+		"        ",
+		"        ",
+		"        ",
 	},
 }

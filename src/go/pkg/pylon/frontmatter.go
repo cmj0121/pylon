@@ -97,6 +97,14 @@ func parseFrontmatter(src *Source) Meta {
 				meta.Color = &v
 				meta.ColorSpan = lineSpan
 			}
+		case "banner":
+			// v1 recognizes only `monospace`; other values fall through
+			// to the theme-driven default — same silent-ignore policy
+			// as `theme:`, `size:`, and `color:`.
+			if raw == "monospace" {
+				meta.Banner = raw
+				meta.BannerSpan = lineSpan
+			}
 		}
 		i++
 	}
