@@ -276,10 +276,13 @@
         if (raw === "true") meta.color = true;
         else if (raw === "false") meta.color = false;
       } else if (key === "banner") {
-        // Selects the `| banner` font. v1 recognizes only `monospace`;
-        // anything else falls through to the theme-driven default.
-        // Silent-ignore policy mirrors `theme:` and `color:`.
-        if (raw === "monospace") meta.banner = "monospace";
+        // Selects the `| banner` font. Recognized values:
+        // `monospace`, `digital`, `mini`. Anything else falls through
+        // to the theme-driven default. Per-box `| banner:FONT`
+        // overrides this image-wide default at render time.
+        if (raw === "monospace" || raw === "digital" || raw === "mini") {
+          meta.banner = raw;
+        }
       }
       i++;
     }
@@ -533,7 +536,7 @@
   // stripped along with the first marker). We match the leftmost
   // ` | <ident>` in a chain that extends to end-of-string.
   const RENDERER_RE =
-    /\s+\|\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+\|\s+[A-Za-z_][A-Za-z0-9_]*)*\s*$/;
+    /\s+\|\s+([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_-]*))?(?:\s+\|\s+[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_-]*)?)*\s*$/;
 
   // Parse a single box, given the slice that starts with '[' or '(' and
   // ends with the matching ']' or ')'.
@@ -559,9 +562,14 @@
       body = clean.slice(0, m.index).trimEnd();
     }
     let renderer;
+    let rendererArg;
     const r = body.match(RENDERER_RE);
     if (r) {
       renderer = r[1];
+      // Group 2 captures the optional `:arg` suffix on the FIRST
+      // renderer pipe. Subsequent chained pipes are matched but
+      // discarded — only the first renderer wins, by existing convention.
+      rendererArg = r[2];
       body = body.slice(0, r.index).trimEnd();
     }
     const box = {
@@ -571,7 +579,10 @@
       items: parseItems(body),
     };
     if (name) box.name = name;
-    if (renderer) box.renderer = renderer;
+    if (renderer) {
+      box.renderer = renderer;
+      if (rendererArg) box.rendererArg = rendererArg;
+    }
     return box;
   };
 
@@ -2765,6 +2776,179 @@
     ],
   };
 
+  // bannerFontDigital is a 7-segment LCD-style glyph table selected by
+  // `[ ... | banner:digital ]` or frontmatter `banner: digital`. Every
+  // glyph is 6 runes wide × 6 rows tall (5 visible cols + 1 pad).
+  // Must stay byte-for-byte identical to bannerFontDigital in
+  // src/go/pkg/pylon/render_banner_fonts.go.
+  const bannerFontDigital = {
+    A: ["█████ ", "█   █ ", "█████ ", "█   █ ", "█   █ ", "█   █ "],
+    B: ["█     ", "█     ", "█████ ", "█   █ ", "█   █ ", "█████ "],
+    C: ["█████ ", "█     ", "█     ", "█     ", "█     ", "█████ "],
+    D: ["    █ ", "    █ ", "█████ ", "█   █ ", "█   █ ", "█████ "],
+    E: ["█████ ", "█     ", "███   ", "█     ", "█     ", "█████ "],
+    F: ["█████ ", "█     ", "███   ", "█     ", "█     ", "█     "],
+    G: ["█████ ", "█     ", "█     ", "█  ██ ", "█   █ ", "█████ "],
+    H: ["█   █ ", "█   █ ", "█████ ", "█   █ ", "█   █ ", "█   █ "],
+    I: ["  █   ", "  █   ", "  █   ", "  █   ", "  █   ", "  █   "],
+    J: ["    █ ", "    █ ", "    █ ", "    █ ", "█   █ ", " ███  "],
+    K: ["█   █ ", "█  █  ", "███   ", "█  █  ", "█   █ ", "█   █ "],
+    L: ["█     ", "█     ", "█     ", "█     ", "█     ", "█████ "],
+    M: ["█   █ ", "██ ██ ", "█ █ █ ", "█   █ ", "█   █ ", "█   █ "],
+    N: ["█   █ ", "██  █ ", "█ █ █ ", "█  ██ ", "█   █ ", "█   █ "],
+    O: ["█████ ", "█   █ ", "█   █ ", "█   █ ", "█   █ ", "█████ "],
+    P: ["█████ ", "█   █ ", "█████ ", "█     ", "█     ", "█     "],
+    Q: ["█████ ", "█   █ ", "█   █ ", "█  ██ ", "█████ ", "    █ "],
+    R: ["█████ ", "█   █ ", "█████ ", "█  █  ", "█   █ ", "█   █ "],
+    S: ["█████ ", "█     ", "█████ ", "    █ ", "    █ ", "█████ "],
+    T: ["█████ ", "  █   ", "  █   ", "  █   ", "  █   ", "  █   "],
+    U: ["█   █ ", "█   █ ", "█   █ ", "█   █ ", "█   █ ", "█████ "],
+    V: ["█   █ ", "█   █ ", "█   █ ", "█   █ ", " █ █  ", "  █   "],
+    W: ["█   █ ", "█   █ ", "█   █ ", "█ █ █ ", "██ ██ ", "█   █ "],
+    X: ["█   █ ", " █ █  ", "  █   ", "  █   ", " █ █  ", "█   █ "],
+    Y: ["█   █ ", "█   █ ", "█████ ", "    █ ", "    █ ", "    █ "],
+    Z: ["█████ ", "    █ ", "   █  ", "  █   ", " █    ", "█████ "],
+    0: ["█████ ", "█   █ ", "█  ██ ", "█ █ █ ", "██  █ ", "█████ "],
+    1: ["  █   ", " ██   ", "  █   ", "  █   ", "  █   ", "█████ "],
+    2: ["█████ ", "    █ ", "█████ ", "█     ", "█     ", "█████ "],
+    3: ["█████ ", "    █ ", "█████ ", "    █ ", "    █ ", "█████ "],
+    4: ["█   █ ", "█   █ ", "█████ ", "    █ ", "    █ ", "    █ "],
+    5: ["█████ ", "█     ", "█████ ", "    █ ", "    █ ", "█████ "],
+    6: ["█████ ", "█     ", "█████ ", "█   █ ", "█   █ ", "█████ "],
+    7: ["█████ ", "    █ ", "    █ ", "    █ ", "    █ ", "    █ "],
+    8: ["█████ ", "█   █ ", "█████ ", "█   █ ", "█   █ ", "█████ "],
+    9: ["█████ ", "█   █ ", "█████ ", "    █ ", "    █ ", "█████ "],
+    " ": ["      ", "      ", "      ", "      ", "      ", "      "],
+    ".": ["      ", "      ", "      ", "      ", "      ", "  █   "],
+    ",": ["      ", "      ", "      ", "      ", "  █   ", " █    "],
+    "!": ["  █   ", "  █   ", "  █   ", "  █   ", "      ", "  █   "],
+    "?": ["█████ ", "    █ ", "  ██  ", "  █   ", "      ", "  █   "],
+    "-": ["      ", "      ", "█████ ", "      ", "      ", "      "],
+    "'": ["  █   ", "  █   ", "      ", "      ", "      ", "      "],
+    '"': ["█ █   ", "█ █   ", "      ", "      ", "      ", "      "],
+    "#": [" █ █  ", "█████ ", " █ █  ", "█████ ", " █ █  ", "      "],
+    $: ["  █   ", "█████ ", "█ █   ", " ███  ", "  █ █ ", "█████ "],
+    "%": ["█   █ ", "   █  ", "  █   ", " █    ", "█   █ ", "      "],
+    "&": [" ██   ", "█  █  ", " ██   ", "█ █ █ ", "█  █  ", " ██ █ "],
+    "(": ["   █  ", "  █   ", " █    ", " █    ", "  █   ", "   █  "],
+    ")": [" █    ", "  █   ", "   █  ", "   █  ", "  █   ", " █    "],
+    "*": ["      ", "█ █ █ ", " ███  ", "█████ ", " ███  ", "█ █ █ "],
+    "+": ["      ", "  █   ", "  █   ", "█████ ", "  █   ", "  █   "],
+    "/": ["    █ ", "   █  ", "  █   ", "  █   ", " █    ", "█     "],
+    ":": ["      ", "  █   ", "      ", "      ", "  █   ", "      "],
+    ";": ["      ", "  █   ", "      ", "      ", "  █   ", " █    "],
+    "<": ["   █  ", "  █   ", " █    ", " █    ", "  █   ", "   █  "],
+    "=": ["      ", "      ", "█████ ", "      ", "█████ ", "      "],
+    ">": [" █    ", "  █   ", "   █  ", "   █  ", "  █   ", " █    "],
+    "@": ["█████ ", "█   █ ", "█ ██  ", "█ █ █ ", "█     ", "█████ "],
+    "[": ["████  ", "█     ", "█     ", "█     ", "█     ", "████  "],
+    "\\": ["█     ", " █    ", "  █   ", "  █   ", "   █  ", "    █ "],
+    "]": [" ████ ", "    █ ", "    █ ", "    █ ", "    █ ", " ████ "],
+    "^": ["  █   ", " █ █  ", "█   █ ", "      ", "      ", "      "],
+    _: ["      ", "      ", "      ", "      ", "      ", "█████ "],
+    "`": [" █    ", "  █   ", "      ", "      ", "      ", "      "],
+    "{": ["   █  ", "  █   ", " █    ", " █    ", "  █   ", "   █  "],
+    "|": ["  █   ", "  █   ", "  █   ", "  █   ", "  █   ", "  █   "],
+    "}": [" █    ", "  █   ", "   █  ", "   █  ", "  █   ", " █    "],
+    "~": ["      ", "      ", " █  █ ", "█  █  ", "      ", "      "],
+  };
+
+  // bannerFontMini is the compact 1-thick-stroke glyph table selected
+  // by `[ ... | banner:mini ]` or frontmatter `banner: mini`. Every
+  // glyph is 5 runes wide × 6 rows tall (4 visible cols + 1 pad).
+  // Must stay byte-for-byte identical to bannerFontMini in
+  // src/go/pkg/pylon/render_banner_fonts.go.
+  const bannerFontMini = {
+    A: [" ██  ", "█  █ ", "████ ", "█  █ ", "█  █ ", "█  █ "],
+    B: ["███  ", "█  █ ", "███  ", "█  █ ", "█  █ ", "███  "],
+    C: [" ███ ", "█    ", "█    ", "█    ", "█    ", " ███ "],
+    D: ["███  ", "█  █ ", "█  █ ", "█  █ ", "█  █ ", "███  "],
+    E: ["████ ", "█    ", "███  ", "█    ", "█    ", "████ "],
+    F: ["████ ", "█    ", "███  ", "█    ", "█    ", "█    "],
+    G: [" ███ ", "█    ", "█    ", "█ ██ ", "█  █ ", " ██  "],
+    H: ["█  █ ", "█  █ ", "████ ", "█  █ ", "█  █ ", "█  █ "],
+    I: ["███  ", " █   ", " █   ", " █   ", " █   ", "███  "],
+    J: ["  █  ", "  █  ", "  █  ", "  █  ", "█ █  ", " █   "],
+    K: ["█  █ ", "█ █  ", "██   ", "█ █  ", "█  █ ", "█  █ "],
+    L: ["█    ", "█    ", "█    ", "█    ", "█    ", "████ "],
+    M: ["█  █ ", "████ ", "█  █ ", "█  █ ", "█  █ ", "█  █ "],
+    N: ["█  █ ", "██ █ ", "█ ██ ", "█  █ ", "█  █ ", "█  █ "],
+    O: [" ██  ", "█  █ ", "█  █ ", "█  █ ", "█  █ ", " ██  "],
+    P: ["███  ", "█  █ ", "███  ", "█    ", "█    ", "█    "],
+    Q: [" ██  ", "█  █ ", "█  █ ", "█ ██ ", " ██  ", "   █ "],
+    R: ["███  ", "█  █ ", "███  ", "█ █  ", "█  █ ", "█  █ "],
+    S: [" ███ ", "█    ", " ██  ", "   █ ", "   █ ", "███  "],
+    T: ["████ ", " █   ", " █   ", " █   ", " █   ", " █   "],
+    U: ["█  █ ", "█  █ ", "█  █ ", "█  █ ", "█  █ ", " ██  "],
+    V: ["█  █ ", "█  █ ", "█  █ ", "█  █ ", " ██  ", "  █  "],
+    W: ["█  █ ", "█  █ ", "█  █ ", "█  █ ", "████ ", "█  █ "],
+    X: ["█  █ ", " ██  ", " ██  ", " ██  ", " ██  ", "█  █ "],
+    Y: ["█  █ ", "█  █ ", " ██  ", "  █  ", "  █  ", "  █  "],
+    Z: ["████ ", "   █ ", "  █  ", " █   ", "█    ", "████ "],
+    0: [" ██  ", "█  █ ", "█ ██ ", "██ █ ", "█  █ ", " ██  "],
+    1: [" █   ", "██   ", " █   ", " █   ", " █   ", "███  "],
+    2: [" ██  ", "█  █ ", "  █  ", " █   ", "█    ", "████ "],
+    3: ["███  ", "   █ ", " ██  ", "   █ ", "   █ ", "███  "],
+    4: ["█  █ ", "█  █ ", "████ ", "   █ ", "   █ ", "   █ "],
+    5: ["████ ", "█    ", "███  ", "   █ ", "█  █ ", " ██  "],
+    6: [" ██  ", "█    ", "███  ", "█  █ ", "█  █ ", " ██  "],
+    7: ["████ ", "   █ ", "  █  ", " █   ", "█    ", "█    "],
+    8: [" ██  ", "█  █ ", " ██  ", "█  █ ", "█  █ ", " ██  "],
+    9: [" ██  ", "█  █ ", "█  █ ", " ███ ", "   █ ", " ██  "],
+    " ": ["     ", "     ", "     ", "     ", "     ", "     "],
+    ".": ["     ", "     ", "     ", "     ", "     ", " █   "],
+    ",": ["     ", "     ", "     ", "     ", " █   ", "█    "],
+    "!": [" █   ", " █   ", " █   ", " █   ", "     ", " █   "],
+    "?": ["███  ", "   █ ", "  █  ", " █   ", "     ", " █   "],
+    "-": ["     ", "     ", "███  ", "     ", "     ", "     "],
+    "'": [" █   ", " █   ", "     ", "     ", "     ", "     "],
+    '"': ["█ █  ", "█ █  ", "     ", "     ", "     ", "     "],
+    "#": [" █ █ ", "████ ", " █ █ ", "████ ", " █ █ ", "     "],
+    $: [" █   ", "███  ", "█    ", " ██  ", "  █  ", "███  "],
+    "%": ["█  █ ", "  █  ", " █   ", "█  █ ", "     ", "     "],
+    "&": [" █   ", "█ █  ", " █   ", "█ █  ", "█ █  ", " █ █ "],
+    "(": ["  █  ", " █   ", "█    ", "█    ", " █   ", "  █  "],
+    ")": ["█    ", " █   ", "  █  ", "  █  ", " █   ", "█    "],
+    "*": ["     ", "█ █  ", " █   ", "███  ", " █   ", "█ █  "],
+    "+": ["     ", " █   ", " █   ", "███  ", " █   ", " █   "],
+    "/": ["   █ ", "  █  ", "  █  ", " █   ", " █   ", "█    "],
+    ":": ["     ", " █   ", "     ", "     ", " █   ", "     "],
+    ";": ["     ", " █   ", "     ", "     ", " █   ", "█    "],
+    "<": ["  █  ", " █   ", "█    ", "█    ", " █   ", "  █  "],
+    "=": ["     ", "     ", "███  ", "     ", "███  ", "     "],
+    ">": ["█    ", " █   ", "  █  ", "  █  ", " █   ", "█    "],
+    "@": [" ██  ", "█  █ ", "█ ██ ", "█    ", " ██  ", "     "],
+    "[": ["██   ", "█    ", "█    ", "█    ", "█    ", "██   "],
+    "\\": ["█    ", " █   ", " █   ", "  █  ", "  █  ", "   █ "],
+    "]": ["  ██ ", "   █ ", "   █ ", "   █ ", "   █ ", "  ██ "],
+    "^": [" █   ", "█ █  ", "     ", "     ", "     ", "     "],
+    _: ["     ", "     ", "     ", "     ", "     ", "████ "],
+    "`": ["█    ", " █   ", "     ", "     ", "     ", "     "],
+    "{": ["  █  ", " █   ", "█    ", "█    ", " █   ", "  █  "],
+    "|": [" █   ", " █   ", " █   ", " █   ", " █   ", " █   "],
+    "}": ["█    ", " █   ", "  █  ", "  █  ", " █   ", "█    "],
+    "~": ["     ", "     ", " █ █ ", "█ █  ", "     ", "     "],
+  };
+
+  // pickBannerFont walks the resolution chain (per-box arg, then
+  // frontmatter banner:) and returns the matching pure-`█` table.
+  // Returns undefined when neither tier names a recognized font, so
+  // callers fall through to the theme-driven default↔ascii pair.
+  // Mirrors pickBannerFont in src/go/pkg/pylon/render_banner.go.
+  const pickBannerFont = (...names) => {
+    for (const name of names) {
+      switch (name) {
+        case "monospace":
+          return bannerFontMonospace;
+        case "digital":
+          return bannerFontDigital;
+        case "mini":
+          return bannerFontMini;
+      }
+    }
+    return undefined;
+  };
+
   const chartRenderers = {
     text(refValue) {
       return [JSON.stringify(refValue)];
@@ -2784,24 +2968,20 @@
 
     // Literal-text banner. `text` is pre-uppercased by applyChartRenderer;
     // unknown runes fall back to '?' so fixtures stay deterministic.
-    // Font selection has two axes: frontmatter `banner:` picks the
-    // family (default vs. monospace); when monospace is selected the
-    // theme-driven `bc` only decides whether to substitute `█→#` on
-    // the finalized rows.
-    banner(text, bc, bannerFont) {
+    // pickBannerFont walks (per-box arg, frontmatter) in order; the
+    // first recognized name wins. Unknown names fall through to the
+    // theme-driven default↔ascii pair.
+    banner(text, bc, boxArg, frontmatterArg) {
       if (text === "") return ["", "", "", "", "", ""];
-      const monospace = bannerFont === "monospace";
-      const font = monospace
-        ? bannerFontMonospace
-        : bc === ASCII_BOX
-          ? bannerFontASCII
-          : bannerFontDefault;
+      const pure = pickBannerFont(boxArg, frontmatterArg);
+      const font =
+        pure || (bc === ASCII_BOX ? bannerFontASCII : bannerFontDefault);
       const rows = ["", "", "", "", "", ""];
       for (const r of text) {
         const glyph = font[r] || font["?"];
         for (let i = 0; i < 6; i++) rows[i] += glyph[i];
       }
-      if (monospace && bc === ASCII_BOX) {
+      if (pure && bc === ASCII_BOX) {
         for (let i = 0; i < 6; i++) rows[i] = rows[i].replace(/█/g, "#");
       }
       return rows;
@@ -2928,10 +3108,14 @@
 
     // Banner is literal-text only: concatenate Text items, uppercase,
     // and hand to the renderer. DataRef children are silently ignored.
+    // Per-box `box.rendererArg` (parsed from `| banner:FONT`) is
+    // tried first; if its name isn't a recognized font the dispatch
+    // falls through to the image-wide `bannerFont` from frontmatter.
     if (name === "banner") {
       const rendered = handler(
         collectTextContent(items).toUpperCase(),
         bc,
+        box.rendererArg,
         bannerFont,
       );
       return rendered.map((r) => ({ type: "text", content: r }));
