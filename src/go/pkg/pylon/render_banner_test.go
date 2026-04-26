@@ -59,32 +59,53 @@ func checkBannerGlyph(t *testing.T, name string, r rune, glyph [6]string) {
 // substituted output or break the assumption that every cell is
 // either fully filled or fully blank.
 func TestBannerFontMonospace(t *testing.T) {
-	const wantWidth = 8
-	if len(bannerFontMonospace) == 0 {
-		t.Fatal("bannerFontMonospace is empty")
+	checkPureBlockFont(t, "bannerFontMonospace", bannerFontMonospace, 8)
+}
+
+// TestBannerFontDigital enforces the same pure-block invariants as
+// monospace, with the digital font's own width contract (6 cells).
+func TestBannerFontDigital(t *testing.T) {
+	checkPureBlockFont(t, "bannerFontDigital", bannerFontDigital, 6)
+}
+
+// TestBannerFontMini enforces the same pure-block invariants as
+// monospace, with the mini font's narrower width contract (5 cells).
+func TestBannerFontMini(t *testing.T) {
+	checkPureBlockFont(t, "bannerFontMini", bannerFontMini, 5)
+}
+
+// checkPureBlockFont validates the invariants shared by every
+// `█`+space banner font: each glyph has 6 rows of exactly wantWidth
+// runes, the last rune of every row is the inter-letter pad space,
+// every rune is in {`█`, ` `}, and the `?` fallback glyph is present.
+// Used by all three pure-block fonts (monospace, digital, mini).
+func checkPureBlockFont(t *testing.T, name string, font map[rune][6]string, wantWidth int) {
+	t.Helper()
+	if len(font) == 0 {
+		t.Fatalf("%s is empty", name)
 	}
-	if _, ok := bannerFontMonospace['?']; !ok {
-		t.Error("bannerFontMonospace missing '?' fallback glyph")
+	if _, ok := font['?']; !ok {
+		t.Errorf("%s missing '?' fallback glyph", name)
 	}
-	for r, glyph := range bannerFontMonospace {
+	for r, glyph := range font {
 		for i, row := range glyph {
 			if strings.ContainsRune(row, '\t') {
-				t.Errorf("bannerFontMonospace[%q] row %d: contains tab", r, i)
+				t.Errorf("%s[%q] row %d: contains tab", name, r, i)
 			}
 			if w := utf8.RuneCountInString(row); w != wantWidth {
-				t.Errorf("bannerFontMonospace[%q] row %d: width %d, want %d (row=%q)",
-					r, i, w, wantWidth, row)
+				t.Errorf("%s[%q] row %d: width %d, want %d (row=%q)",
+					name, r, i, w, wantWidth, row)
 				continue
 			}
 			runes := []rune(row)
 			if runes[len(runes)-1] != ' ' {
-				t.Errorf("bannerFontMonospace[%q] row %d: last rune is %q, want ' ' (col 8 pad invariant)",
-					r, i, runes[len(runes)-1])
+				t.Errorf("%s[%q] row %d: last rune is %q, want ' ' (col-pad invariant)",
+					name, r, i, runes[len(runes)-1])
 			}
 			for j, rr := range runes {
 				if rr != '█' && rr != ' ' {
-					t.Errorf("bannerFontMonospace[%q] row %d col %d: rune %q outside {'█', ' '}",
-						r, i, j, rr)
+					t.Errorf("%s[%q] row %d col %d: rune %q outside {'█', ' '}",
+						name, r, i, j, rr)
 				}
 			}
 		}

@@ -98,10 +98,13 @@ func parseFrontmatter(src *Source) Meta {
 				meta.ColorSpan = lineSpan
 			}
 		case "banner":
-			// v1 recognizes only `monospace`; other values fall through
-			// to the theme-driven default — same silent-ignore policy
-			// as `theme:`, `size:`, and `color:`.
-			if raw == "monospace" {
+			// Recognized fonts: `monospace`, `digital`, `mini`. Any
+			// other value falls through to the theme-driven default
+			// — same silent-ignore policy as `theme:`, `size:`, and
+			// `color:`. Per-box `[ ... | banner:FONT ]` overrides this
+			// frontmatter default at render time.
+			switch raw {
+			case "monospace", "digital", "mini":
 				meta.Banner = raw
 				meta.BannerSpan = lineSpan
 			}

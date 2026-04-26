@@ -48,15 +48,20 @@ func RenderRows(ast *Box) []string {
 		targetW = &w
 		targetH = &h
 	}
-	// Propagate the root's ColorEnabled flag to every nested box so
-	// chart primitives buried inside a multi-item source (e.g.
+	// Propagate root-only frontmatter into every nested box so chart
+	// primitives buried inside a multi-item source (e.g.
 	// `examples/showcase.pylon`) can read it from their own
-	// `b.Meta.ColorEnabled` without having to walk back up to the
-	// root. Only ColorEnabled is propagated — size/theme/data stay
-	// root-only because they're intentionally scoped.
-	if ast.Meta.ColorEnabled {
+	// `b.Meta` without walking back to the root. Color and Banner are
+	// the only fields propagated — size/theme/data stay root-only
+	// because they're intentionally scoped.
+	if ast.Meta.ColorEnabled || ast.Meta.Banner != "" {
 		walkBoxes(ast, func(b *Box) {
-			b.Meta.ColorEnabled = true
+			if ast.Meta.ColorEnabled {
+				b.Meta.ColorEnabled = true
+			}
+			if ast.Meta.Banner != "" {
+				b.Meta.Banner = ast.Meta.Banner
+			}
 		})
 	}
 	data := ast.Meta.Data

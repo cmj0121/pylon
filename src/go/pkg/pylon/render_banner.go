@@ -12,22 +12,23 @@ const bannerRows = 6
 // Input is uppercased before lookup; unknown runes fall back to the
 // '?' glyph so fixtures stay deterministic.
 //
-// Font selection has two axes. The frontmatter `banner:` key picks the
-// family (default vs. monospace); when monospace is selected the
-// theme-driven `bc` only decides whether to substitute `█→#` on the
-// finalized rows. When banner is unset the existing default↔ascii pair
-// is consulted as before.
+// Font selection follows a three-tier resolution order:
+//  1. Per-box renderer arg `[ ... | banner:FONT ]` (highest priority).
+//  2. Frontmatter `banner: FONT` (image-wide default).
+//  3. Theme dispatch — ANSI Shadow under default, `#`+space under ascii.
+//
+// Recognized FONT values: `monospace`, `digital`, `mini`. Unknown values
+// silently fall through to the next tier (matching `theme:`/`color:`
+// silent-ignore policy). The three pure-`█` fonts share a row-level
+// `█→#` substitution that derives the ascii-theme variant on the fly.
 func renderBanner(b *Box, bc boxChars) []string {
-	monospace := b.Meta.Banner == "monospace"
-
-	var font map[rune][6]string
-	switch {
-	case monospace:
-		font = bannerFontMonospace
-	case bc == asciiBox:
-		font = bannerFontASCII
-	default:
-		font = bannerFontDefault
+	font, pureBlock := pickBannerFont(b.RendererArg, b.Meta.Banner)
+	if !pureBlock {
+		if bc == asciiBox {
+			font = bannerFontASCII
+		} else {
+			font = bannerFontDefault
+		}
 	}
 
 	var sb strings.Builder
@@ -53,7 +54,7 @@ func renderBanner(b *Box, bc boxChars) []string {
 	for i := range rows {
 		out[i] = rows[i].String()
 	}
-	if monospace && bc == asciiBox {
+	if pureBlock && bc == asciiBox {
 		// Pure-`█` palette → total-function substitution to `#`. Done
 		// once per finalized row instead of per glyph.
 		for i := range out {
@@ -61,6 +62,25 @@ func renderBanner(b *Box, bc boxChars) []string {
 		}
 	}
 	return out
+}
+
+// pickBannerFont resolves the per-box arg and frontmatter `banner:` key
+// into a font table. Returns (table, true) when a pure-`█` font was
+// selected (caller does the `█→#` substitution under ascii theme), and
+// (nil, false) when neither tier specified a known font (caller falls
+// back to the default↔ascii pair).
+func pickBannerFont(boxArg, metaBanner string) (map[rune][6]string, bool) {
+	for _, name := range []string{boxArg, metaBanner} {
+		switch name {
+		case "monospace":
+			return bannerFontMonospace, true
+		case "digital":
+			return bannerFontDigital, true
+		case "mini":
+			return bannerFontMini, true
+		}
+	}
+	return nil, false
 }
 
 // collectBoxText concatenates the Content of every *Text reachable
