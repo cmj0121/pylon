@@ -386,12 +386,6 @@ func parseBracketedNode(src *Source) *Box {
 		box.Name = name
 	}
 	if renderer != "" {
-		// TODO: `| renderer` is parsed but not yet rendered in the Go port.
-		// The JS side dispatches through a chart-renderer table (hbar,
-		// vbar, text, line, bar); porting that surface is deferred to a
-		// future commit. For now we store the renderer name on the box
-		// so the AST stays faithful, but the ASCII renderer ignores it
-		// and renders items normally.
 		box.Renderer = renderer
 		box.RendererArg = rendererArg
 	}

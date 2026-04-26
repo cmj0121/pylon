@@ -367,8 +367,10 @@
   //   <-->       length=2 bidirectional  (arrow on both sides)
   //   --->       length=3 right
   //   ...and so on. The general form is <?-+>? with at least one arrow.
-  //   Pure dashes with no arrow head stay as literal text (the labelled
-  //   edge form '-- ( label ) -->' lands in a later commit).
+  //   Pure dashes with no arrow head stay as literal text. The
+  //   labelled-edge form `-- ( label ) -->` is recombined further
+  //   downstream by the dash+borderless-box+dash fold (search for
+  //   `label: b,` in this file) into a single Edge carrying a label.
   //
   // Note on '-': inside brackets flush with the wall (e.g. '[- x -]') a
   // lone dash is an alignment spring (unchanged). Between siblings on a

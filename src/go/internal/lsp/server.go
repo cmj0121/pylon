@@ -41,8 +41,7 @@ func Run() error {
 	// spawned by jsonrpc2 aren't covered here and rely on the glsp /
 	// jsonrpc2 layers for their own recovery; a panic in onDidChange
 	// will still crash the server, and the client is expected to
-	// restart us. Adding per-handler recover() is a feat/pylon-lsp-ux
-	// follow-up.
+	// restart us. Per-handler recover() is a future follow-up.
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().Interface("panic", r).Msg("pylon-lsp: recovered from panic")
@@ -62,11 +61,11 @@ func configureLogging() {
 }
 
 // buildProtocolHandler wires glsp's protocol.Handler slots to the
-// server's lifecycle + document-sync callbacks. U4 advertises only
-// textDocument/didOpen/didChange/didClose (full-text sync) — the
-// feature-flag slots for documentSymbol, semanticTokens, etc. stay
-// nil and so capabilities advertise false for them. U5/U6/U7 fill
-// them in.
+// server's lifecycle + document-sync callbacks. The server advertises
+// full-text sync (didOpen/didChange/didClose) plus document symbols
+// and semantic tokens; capabilities not listed here stay nil and the
+// matching client requests get the default "method not supported"
+// response from glsp.
 func buildProtocolHandler(store *Store, handlers *Handlers) protocol.Handler {
 	return protocol.Handler{
 		Initialize:  onInitialize,
@@ -84,9 +83,9 @@ func buildProtocolHandler(store *Store, handlers *Handlers) protocol.Handler {
 }
 
 func onInitialize(ctx *glsp.Context, params *protocol.InitializeParams) (any, error) {
-	// Full-text sync plus the features U5+ flipped on: document
-	// symbols. diagnosticProvider stays nil -- we push diagnostics
-	// via the publish notification, not pull (3.17-era) queries.
+	// Full-text sync plus document symbols and semantic tokens.
+	// diagnosticProvider stays nil — we push diagnostics via the
+	// publish notification, not pull (3.17-era) queries.
 	caps := protocol.ServerCapabilities{
 		TextDocumentSync:       protocol.TextDocumentSyncKindFull,
 		DocumentSymbolProvider: true,

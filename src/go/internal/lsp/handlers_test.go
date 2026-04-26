@@ -34,8 +34,8 @@ func TestHandlersEmpty(t *testing.T) {
 func TestHandlersPopulatedCleanDoc(t *testing.T) {
 	// Clean source produces no diagnostics and no document symbols.
 	// Semantic tokens DO emit for "[ hello ]" — two bracket tokens
-	// (opener + closer). U7 partial scope: brackets + refs / datarefs
-	// only; everything else defers to feat/pylon-lsp-ux.
+	// (opener + closer). Token coverage today: brackets + refs /
+	// datarefs only; see tokens.go for the deferred-class list.
 	store := NewStore()
 	const uri = "file:///tmp/c.pylon"
 	store.Open(uri, 1, "[ hello ]")
