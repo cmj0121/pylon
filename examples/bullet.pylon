@@ -1,0 +1,14 @@
+---
+data:
+  series:
+    - x: Sales
+      y: 70
+      target: 100
+    - x: Profit
+      y: 45
+      target: 60
+    - x: Stock
+      y: 25
+      target: 80
+---
+[ @series | bullet ]
