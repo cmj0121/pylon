@@ -82,6 +82,20 @@ func applyChartRenderer(b *Box, data interface{}, bc boxChars) []string {
 		// only non-zero on the root, so nested boxes fall through with
 		// Size=nil (default 20-cell budget).
 		return renderGantt(chartSeries(b, data), bc, Meta{Data: data, Size: b.Meta.Size})
+	case "line":
+		return renderLine(chartSeries(b, data), bc)
+	case "area":
+		return renderArea(chartSeries(b, data), bc)
+	case "scatter":
+		return renderScatter(chartSeries(b, data), bc)
+	case "sbar":
+		return renderSBar(chartSeries(b, data), bc)
+	case "bullet":
+		return renderBullet(chartSeries(b, data), bc)
+	case "box":
+		return renderBox(chartSeries(b, data), bc)
+	case "calendar":
+		return renderCalendar(chartSeries(b, data), bc)
 	}
 	return nil
 }

@@ -29,6 +29,13 @@ or by copying the source into a `<pylon-chart>` element.
 | [step.pylon](step.pylon)                           | 5-row cumulative step line with corner connectors                       |
 | [gantt.pylon](gantt.pylon)                         | Task bars over a shared horizontal budget                               |
 | [theme-ascii.pylon](theme-ascii.pylon)             | `theme: ascii` swaps Unicode glyphs for plain ASCII                     |
+| [line.pylon](line.pylon)                           | Multi-row continuous line plot with point markers                       |
+| [area.pylon](area.pylon)                           | Filled-below-curve trend using the heatmap shade ramp                   |
+| [scatter.pylon](scatter.pylon)                     | 2D scatter plot of discrete points                                      |
+| [sbar.pylon](sbar.pylon)                           | Horizontal stacked bars from a multi-value series                       |
+| [bullet.pylon](bullet.pylon)                       | Target+actual+bands dashboard chart                                     |
+| [box.pylon](box.pylon)                             | 5-number-summary boxplot (whiskers + IQR + median)                      |
+| [calendar.pylon](calendar.pylon)                   | GitHub-style year-of-days activity heatmap                              |
 | [showcase.pylon](showcase.pylon)                   | Every chart + diagram primitive; opts into ANSI color via `color: true` |
 
 <!-- markdownlint-enable MD013 -->

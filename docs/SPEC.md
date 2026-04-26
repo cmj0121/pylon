@@ -279,22 +279,33 @@ silent.
 
 ## Available renderers
 
-Pylon 0.2.0 ships eleven renderers. Unknown names surface an inline
+Pylon 0.3.0 ships eighteen renderers. Unknown names surface an inline
 `⚠ unknown renderer: NAME`.
 
-| Renderer       | Input                       | Output                                                          |
-| -------------- | --------------------------- | --------------------------------------------------------------- |
-| `text`         | string or `@ref`            | Pass-through; `@ref` emitted via `JSON.stringify`.              |
-| `hbar` (`bar`) | `@ref` → `[{x,y}]`          | Horizontal bars scaled against `max(y)` with `(value)` labels.  |
-| `vbar`         | `@ref` → `[{x,y}]`          | Vertical bars scaled against `max(y)`; `x`/`(value)` as feet.   |
-| `banner`       | literal string              | 6-row block-letter banner of the uppercased source text.        |
-| `progress`     | scalar or `@ref`→`[{x,y}]`  | Progress bar(s) with a right-aligned `%` label; 20-cell budget. |
-| `heatmap`      | `@ref` → `[{x, y:[n,...]}]` | 2D matrix of ramp glyphs (`░▒▓█` / `.+*#`).                     |
-| `sparkline`    | `@ref` → `[{x,y}]`          | Single-row ramp; 8 levels default / 4 levels ascii.             |
-| `candlestick`  | `@ref` → `[{x,o,h,l,c}]`    | Fixed 8-row OHLC candles with bull/bear/doji bodies and wicks.  |
-| `hist`         | `@ref` → `[{x,y}]`          | Gap-less 8-row histogram bars; bar-family validators.           |
-| `step`         | `@ref` → `[{x,y}]`          | 5-row cumulative step line with box-drawing corner connectors.  |
-| `gantt`        | `@ref` → `[{x,start,end}]`  | Horizontal task bars on a shared budget; size-aware.            |
+<!-- markdownlint-disable MD013 -->
+
+| Renderer       | Input                                   | Output                                                                  |
+| -------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| `text`         | string or `@ref`                        | Pass-through; `@ref` emitted via `JSON.stringify`.                      |
+| `hbar` (`bar`) | `@ref` → `[{x,y}]`                      | Horizontal bars scaled against `max(y)` with `(value)` labels.          |
+| `vbar`         | `@ref` → `[{x,y}]`                      | Vertical bars scaled against `max(y)`; `x`/`(value)` as feet.           |
+| `banner`       | literal string                          | 6-row block-letter banner of the uppercased source text.                |
+| `progress`     | scalar or `@ref`→`[{x,y}]`              | Progress bar(s) with a right-aligned `%` label; 20-cell budget.         |
+| `heatmap`      | `@ref` → `[{x, y:[n,...]}]`             | 2D matrix of ramp glyphs (`░▒▓█` / `.+*#`).                             |
+| `sparkline`    | `@ref` → `[{x,y}]`                      | Single-row ramp; 8 levels default / 4 levels ascii.                     |
+| `candlestick`  | `@ref` → `[{x,o,h,l,c}]`                | Fixed 8-row OHLC candles with bull/bear/doji bodies and wicks.          |
+| `hist`         | `@ref` → `[{x,y}]`                      | Gap-less 8-row histogram bars; bar-family validators.                   |
+| `step`         | `@ref` → `[{x,y}]`                      | 5-row cumulative step line with box-drawing corner connectors.          |
+| `gantt`        | `@ref` → `[{x,start,end}]`              | Horizontal task bars on a shared budget; size-aware.                    |
+| `line`         | `@ref` → `[{x,y}]`                      | 7-row continuous line plot with point markers + box-drawing connectors. |
+| `area`         | `@ref` → `[{x,y}]`                      | 7-row filled area chart using the heatmap shade ramp.                   |
+| `scatter`      | `@ref` → `[{x,y}]`                      | 7×30-cell 2D scatter plot of discrete points.                           |
+| `sbar`         | `@ref` → `[{x, y:[n,...]}]`             | Horizontal stacked bars; each y-array element gets a ramp slot.         |
+| `bullet`       | `@ref` → `[{x, y, target?}]`            | Layered bar: qualitative bands + actual + target marker.                |
+| `box`          | `@ref` → `[{x, min, q1, med, q3, max}]` | Boxplot row per series entry (whiskers + IQR fill + median).            |
+| `calendar`     | `@ref` → `[{date, y}]`                  | 7-row × N-week activity heatmap. `date` is `YYYY-MM-DD`.                |
+
+<!-- markdownlint-enable MD013 -->
 
 `bar` is a v0.1 alias for `hbar`; both render identically.
 
@@ -936,6 +947,162 @@ surface `⚠ gantt: expected [{x, start, end}]`, reusing the
 reports `gantt: invalid range` — a new code, `gantt.range`,
 because a negative or inverted interval is a data error that
 no other renderer models.
+
+### line
+
+```pylon
+[ @series | line ]
+```
+
+```txt
+┌───────────────┐
+│         ●     │
+│     ●    │    │
+│      │ │      │
+│    │      ●   │
+│       ●       │
+│               │
+│   ●           │
+└───────────────┘
+```
+
+`line` plots discrete `(x, y)` points connected by box-drawing
+glyphs across a fixed 7-row grid. Each entry occupies two cells
+(point + transition). Connector glyph between adjacent points:
+horizontal `─` for equal rows, diagonal `╱`/`╲` for one-row
+deltas, vertical bar `│` for two-row-or-more deltas. Negative `y`
+and duplicate `x` are tolerated (sparkline-family rules).
+
+### area
+
+```pylon
+[ @series | area ]
+```
+
+```txt
+┌───────────┐
+│      █    │
+│      ▓    │
+│    █ ▒    │
+│    ▓ ░█   │
+│    ▒ ░▓   │
+│    ░█░▒   │
+│    ░▓░░   │
+└───────────┘
+```
+
+`area` fills every column from the data point down to the baseline
+with a five-step heatmap ramp (`░▒▓█`). Higher `y` → taller stack,
+with the topmost cell at full intensity. Same input shape and
+tolerance profile as `line`/`sparkline`.
+
+### scatter
+
+```pylon
+[ @series | scatter ]
+```
+
+```txt
+┌────────────────────────────────────┐
+│                  ●                 │
+│                                    │
+│   ●                                │
+│                                ●   │
+│                                    │
+│          ●                         │
+│                         ●          │
+└────────────────────────────────────┘
+```
+
+`scatter` places one dot per entry on a 7×30-cell grid. `x` is
+treated numerically when possible (string labels collapse to their
+position index). A flat-x series collapses to a single column;
+flat-y to a single row.
+
+### sbar
+
+```pylon
+[ @series | sbar ]
+```
+
+```txt
+┌──────────────────────────┐
+│   Q1 │ ░░░░▒▒▓█   (20)   │
+│   Q2 │ ░░░▒▒▒▓▓   (20)   │
+│   Q3 │ ░░░░░▒▒▓▓█ (25)   │
+└──────────────────────────┘
+```
+
+`sbar` is a horizontal stacked bar. Input shape matches `heatmap`
+(`[{x, y:[n,...]}]`); each element of the y-array gets a ramp
+slot, and the row's total width is normalized to a 10-cell budget
+against the largest row sum.
+
+### bullet
+
+```pylon
+[ @series | bullet ]
+```
+
+```txt
+┌────────────────────────────────────────┐
+│    Sales │ ██████████████▓▓▓▓▓◆ (70)   │
+│   Profit │ █████████▒▒▒◆▓▓▓▓▓▓▓ (45)   │
+│    Stock │ █████░▒▒▒▒▒▒▒▓▓▓◆▓▓▓ (25)   │
+└────────────────────────────────────────┘
+```
+
+`bullet` is a layered single-row chart: qualitative bands at 33% /
+66% / 100% of the row's reference scale, an overlaid actual-value
+bar, and (when present) a target marker `◆`. Reference scale =
+`max(y, target)` across all rows. The `target` field is optional;
+when absent the row renders just bands + bar.
+
+### box
+
+```pylon
+[ @series | box ]
+```
+
+```txt
+┌────────────────────────────────┐
+│   Mon │  ────┤▓▓▓█▓▓├────      │
+│   Tue │    ────┤▓▓█▓▓▓▓├────   │
+│   Wed │ ────┤▓▓▓█▓▓├────       │
+└────────────────────────────────┘
+```
+
+`box` renders a horizontal box-plot row per entry: whiskers `──`,
+box edges `┤├`, IQR fill `▓`, median strip `█`. All five
+numbers (`min`, `q1`, `med`, `q3`, `max`) map onto a global scale
+across rows so multiple boxes render comparably. Constraint:
+`min ≤ q1 ≤ med ≤ q3 ≤ max`; out-of-order values report
+`box: invalid order`.
+
+### calendar
+
+```pylon
+[ @series | calendar ]
+```
+
+```txt
+┌───────────────┐
+│   Sun     █   │
+│   Mon ▒▓      │
+│   Tue   ▒     │
+│   Wed         │
+│   Thu  ░      │
+│   Fri         │
+│   Sat         │
+└───────────────┘
+```
+
+`calendar` lays out a GitHub-style year-of-days heatmap. Each
+input entry carries a `date` (YYYY-MM-DD literal) and a numeric
+`y`. Output is 7 rows (Sun..Sat) × N columns (weeks). The grid
+anchors to the Sunday on/before the earliest date, so each column
+is a clean Sun..Sat week. Days outside the input range render
+blank.
 
 ## Error model
 

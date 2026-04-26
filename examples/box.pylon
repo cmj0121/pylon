@@ -1,0 +1,23 @@
+---
+data:
+  series:
+    - x: Mon
+      min: 5
+      q1: 12
+      med: 18
+      q3: 24
+      max: 30
+    - x: Tue
+      min: 8
+      q1: 14
+      med: 20
+      q3: 28
+      max: 35
+    - x: Wed
+      min: 3
+      q1: 10
+      med: 16
+      q3: 22
+      max: 28
+---
+[ @series | box ]

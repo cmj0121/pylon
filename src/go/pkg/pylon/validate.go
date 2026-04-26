@@ -93,6 +93,13 @@ var knownRenderers = map[string]bool{
 	"hist":        true,
 	"step":        true,
 	"gantt":       true,
+	"line":        true,
+	"area":        true,
+	"scatter":     true,
+	"sbar":        true,
+	"bullet":      true,
+	"box":         true,
+	"calendar":    true,
 }
 
 // validateRenderers walks every Box (including those inside Edge
@@ -217,6 +224,35 @@ func rendererInlineError(b *Box, meta Meta) (Code, string, bool) {
 	// gantt has its own shape (`[{x, start, end}]`) + range checks.
 	if b.Renderer == "gantt" {
 		return validateGanttSeries(series)
+	}
+	// line / area / scatter share sparkline's shape rules (numeric y,
+	// negative tolerated, duplicate x tolerated). Each gets its own
+	// validator just so the wire prefix matches the user-typed name.
+	if b.Renderer == "line" {
+		return validateXYSeries("line", series)
+	}
+	if b.Renderer == "area" {
+		return validateXYSeries("area", series)
+	}
+	if b.Renderer == "scatter" {
+		return validateXYSeries("scatter", series)
+	}
+	// sbar shares the heatmap shape (`[{x, y:[n,...]}]`) — multi-value
+	// row with non-negative y entries. Wire prefix is "sbar:".
+	if b.Renderer == "sbar" {
+		return validateSBarSeries(series)
+	}
+	// bullet adds an optional `target` numeric field on top of `[{x,y}]`.
+	if b.Renderer == "bullet" {
+		return validateBulletSeries(series)
+	}
+	// box carries a 5-number summary `[{x, min, q1, med, q3, max}]`.
+	if b.Renderer == "box" {
+		return validateBoxSeries(series)
+	}
+	// calendar carries `[{date, y}]` with date as `YYYY-MM-DD` literal.
+	if b.Renderer == "calendar" {
+		return validateCalendarSeries(series)
 	}
 	// hist flows through the bar-family validator but treats empty-x
 	// entries as "no label" rather than a label literal, so empty-x

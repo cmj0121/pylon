@@ -2949,6 +2949,464 @@
     return undefined;
   };
 
+  // ---- line / area / scatter (shared XY shape) ---------------------
+
+  const lineHeight = 7;
+  const scatterHeight = 7;
+  const scatterWidth = 30;
+
+  const lineGlyphsDefault = {
+    point: "●",
+    horiz: "─",
+    up: "╱",
+    down: "╲",
+    vert: "│",
+  };
+  const lineGlyphsASCII = {
+    point: "o",
+    horiz: "-",
+    up: "/",
+    down: "\\",
+    vert: "|",
+  };
+  const lineGlyphRamp = (bc) =>
+    bc === ASCII_BOX ? lineGlyphsASCII : lineGlyphsDefault;
+
+  // validateXYSeries mirrors Go's validateXYSeries: shape + empty +
+  // non-NaN y. Negative y and duplicate x are tolerated. The `name`
+  // parameter threads into the wire prefix so diagnostics read
+  // `⚠ line:` / `⚠ area:` / `⚠ scatter:` per the user's source.
+  const validateXYSeries = (name, refValue) => {
+    const shape = () => [`⚠ ${name}: expected [{x,y}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ ${name}: empty series`];
+    for (const e of refValue) {
+      if (!e || typeof e !== "object") return shape();
+      if (!("x" in e) || !("y" in e)) return shape();
+      if (typeof e.y !== "number" || Number.isNaN(e.y)) return shape();
+    }
+    return null;
+  };
+
+  const renderLine = (series, bc) => {
+    const g = lineGlyphRamp(bc);
+    const n = series.length;
+    const ys = series.map((e) => e.y);
+    let gMin = ys[0],
+      gMax = ys[0];
+    for (const v of ys) {
+      if (v < gMin) gMin = v;
+      if (v > gMax) gMax = v;
+    }
+    const H = lineHeight;
+    const rowFor = (y) =>
+      gMax === gMin
+        ? H - 1
+        : H - 1 - Math.round(((y - gMin) / (gMax - gMin)) * (H - 1));
+    const rows = ys.map(rowFor);
+    const width = Math.max(2 * n - 1, 1);
+    const grid = Array.from({ length: H }, () => Array(width).fill(" "));
+    for (let i = 0; i < n; i++) {
+      grid[rows[i]][2 * i] = g.point;
+      if (i === n - 1) continue;
+      const cur = rows[i],
+        nxt = rows[i + 1];
+      const col = 2 * i + 1;
+      if (cur === nxt) grid[cur][col] = g.horiz;
+      else if (cur > nxt && cur - nxt === 1) grid[cur][col] = g.up;
+      else if (cur < nxt && nxt - cur === 1) grid[cur][col] = g.down;
+      else {
+        const mid = Math.floor((cur + nxt) / 2);
+        grid[mid][col] = g.vert;
+      }
+    }
+    return grid.map((r) => r.join(""));
+  };
+
+  const renderArea = (series, bc) => {
+    const glyphs = heatmapGlyphs(bc);
+    const rampLevels = glyphs.length - 1;
+    const n = series.length;
+    const ys = series.map((e) => e.y);
+    let gMin = ys[0],
+      gMax = ys[0];
+    for (const v of ys) {
+      if (v < gMin) gMin = v;
+      if (v > gMax) gMax = v;
+    }
+    const H = lineHeight;
+    const heights = ys.map((y) => {
+      if (gMax === gMin) return 1;
+      let h = Math.round(((y - gMin) / (gMax - gMin)) * H);
+      if (h < 0) h = 0;
+      if (h > H) h = H;
+      return h;
+    });
+    const out = [];
+    for (let r = 0; r < H; r++) {
+      let row = "";
+      for (let i = 0; i < n; i++) {
+        const fromBottom = H - r;
+        if (heights[i] >= fromBottom) {
+          const delta = heights[i] - fromBottom;
+          let idx = rampLevels - delta;
+          if (idx < 1) idx = 1;
+          if (idx > rampLevels) idx = rampLevels;
+          row += glyphs[idx];
+        } else {
+          row += glyphs[0];
+        }
+      }
+      out.push(row);
+    }
+    return out;
+  };
+
+  const renderScatter = (series, bc) => {
+    const g = lineGlyphRamp(bc);
+    const n = series.length;
+    const xs = series.map((e, i) => (typeof e.x === "number" ? e.x : i));
+    const ys = series.map((e) => e.y);
+    let xMin = xs[0],
+      xMax = xs[0],
+      yMin = ys[0],
+      yMax = ys[0];
+    for (let i = 1; i < n; i++) {
+      if (xs[i] < xMin) xMin = xs[i];
+      if (xs[i] > xMax) xMax = xs[i];
+      if (ys[i] < yMin) yMin = ys[i];
+      if (ys[i] > yMax) yMax = ys[i];
+    }
+    const W = scatterWidth,
+      H = scatterHeight;
+    const grid = Array.from({ length: H }, () => Array(W).fill(" "));
+    for (let i = 0; i < n; i++) {
+      let col =
+        xMax > xMin
+          ? Math.round(((xs[i] - xMin) / (xMax - xMin)) * (W - 1))
+          : 0;
+      let row =
+        yMax > yMin
+          ? H - 1 - Math.round(((ys[i] - yMin) / (yMax - yMin)) * (H - 1))
+          : H - 1;
+      if (col < 0) col = 0;
+      if (col >= W) col = W - 1;
+      if (row < 0) row = 0;
+      if (row >= H) row = H - 1;
+      grid[row][col] = g.point;
+    }
+    return grid.map((r) => r.join(""));
+  };
+
+  // ---- sbar (stacked horizontal bar; heatmap shape) ----------------
+
+  const sbarBudget = 10;
+
+  const validateSBarSeries = (refValue) => {
+    const shape = () => [`⚠ sbar: expected [{x, y:[n,...]}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ sbar: empty series`];
+    for (const e of refValue) {
+      if (!e || typeof e !== "object") return shape();
+      if (!("x" in e) || !("y" in e)) return shape();
+      if (!Array.isArray(e.y)) return shape();
+      for (const v of e.y) {
+        if (typeof v !== "number" || Number.isNaN(v)) return shape();
+        if (v < 0) return [`⚠ sbar: negative y`];
+      }
+    }
+    return null;
+  };
+
+  const renderSBar = (series, bc) => {
+    const glyphs = heatmapGlyphs(bc);
+    const rampLevels = glyphs.length - 1;
+    const n = series.length;
+    const labels = series.map((e) => String(e.x));
+    const rows = series.map((e) => e.y);
+    const sums = rows.map((ys) => ys.reduce((a, b) => a + b, 0));
+    const maxSum = Math.max(...sums, 0);
+    const values = sums.map((s) => "(" + String(s) + ")");
+    const labelW = Math.max(...labels.map((l) => displayWidth(l)), 0);
+    const valueW = Math.max(...values.map((v) => displayWidth(v)), 0);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const totalCells =
+        maxSum > 0 ? Math.round((sums[i] / maxSum) * sbarBudget) : 0;
+      const rowSum = sums[i];
+      let stack = "";
+      let used = 0;
+      for (let j = 0; j < rows[i].length; j++) {
+        let share =
+          rowSum > 0 ? Math.round((rows[i][j] / rowSum) * totalCells) : 0;
+        if (used + share > totalCells) share = totalCells - used;
+        if (share < 0) share = 0;
+        const ramp = (j % rampLevels) + 1;
+        stack += glyphs[ramp].repeat(share);
+        used += share;
+      }
+      let body = stack + " ".repeat(sbarBudget);
+      body = clipRow(body, sbarBudget + 1);
+      out.push(
+        padRow(labels[i], labelW, "right", 0) +
+          " " +
+          bc.v +
+          " " +
+          body +
+          padRow(values[i], valueW, "right", 0),
+      );
+    }
+    return out;
+  };
+
+  // ---- bullet (target + actual + bands) ----------------------------
+
+  const bulletBudget = 20;
+  const bulletGlyphsDefault = {
+    bandLo: "░",
+    bandMid: "▒",
+    bandHi: "▓",
+    bar: "█",
+    target: "◆",
+  };
+  const bulletGlyphsASCII = {
+    bandLo: ".",
+    bandMid: "+",
+    bandHi: "*",
+    bar: "#",
+    target: "|",
+  };
+  const bulletGlyphRamp = (bc) =>
+    bc === ASCII_BOX ? bulletGlyphsASCII : bulletGlyphsDefault;
+
+  const validateBulletSeries = (refValue) => {
+    const shape = () => [`⚠ bullet: expected [{x, y, target?}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ bullet: empty series`];
+    for (const e of refValue) {
+      if (!e || typeof e !== "object") return shape();
+      if (!("x" in e) || !("y" in e)) return shape();
+      if (typeof e.y !== "number" || Number.isNaN(e.y)) return shape();
+      if (e.y < 0) return [`⚠ bullet: negative y`];
+      if ("target" in e) {
+        if (typeof e.target !== "number" || Number.isNaN(e.target))
+          return shape();
+        if (e.target < 0) return [`⚠ bullet: negative target`];
+      }
+    }
+    return null;
+  };
+
+  const renderBullet = (series, bc) => {
+    const g = bulletGlyphRamp(bc);
+    const n = series.length;
+    const labels = series.map((e) => String(e.x));
+    const ys = series.map((e) => e.y);
+    const targets = series.map((e) =>
+      typeof e.target === "number" ? e.target : null,
+    );
+    const values = ys.map((y) => "(" + String(y) + ")");
+    const labelW = Math.max(...labels.map((l) => displayWidth(l)), 0);
+    const valueW = Math.max(...values.map((v) => displayWidth(v)), 0);
+    let maxRef = 0;
+    for (let i = 0; i < n; i++) {
+      if (ys[i] > maxRef) maxRef = ys[i];
+      if (targets[i] !== null && targets[i] > maxRef) maxRef = targets[i];
+    }
+    const budget = bulletBudget;
+    const loEnd = Math.floor(budget / 3);
+    const midEnd = Math.floor((2 * budget) / 3);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const bar = new Array(budget);
+      for (let c = 0; c < budget; c++) {
+        if (c < loEnd) bar[c] = g.bandLo;
+        else if (c < midEnd) bar[c] = g.bandMid;
+        else bar[c] = g.bandHi;
+      }
+      let valCells = maxRef > 0 ? Math.round((ys[i] / maxRef) * budget) : 0;
+      if (valCells > budget) valCells = budget;
+      for (let c = 0; c < valCells; c++) bar[c] = g.bar;
+      if (targets[i] !== null) {
+        let tCell = maxRef > 0 ? Math.round((targets[i] / maxRef) * budget) : 0;
+        if (tCell >= budget) tCell = budget - 1;
+        if (tCell < 0) tCell = 0;
+        bar[tCell] = g.target;
+      }
+      const body = bar.join("") + " ";
+      out.push(
+        padRow(labels[i], labelW, "right", 0) +
+          " " +
+          bc.v +
+          " " +
+          body +
+          padRow(values[i], valueW, "right", 0),
+      );
+    }
+    return out;
+  };
+
+  // ---- box (5-number-summary boxplot) ------------------------------
+
+  const boxBudget = 20;
+  const boxGlyphsDefault = {
+    whisker: "─",
+    edgeL: "┤",
+    edgeR: "├",
+    fill: "▓",
+    median: "█",
+  };
+  const boxGlyphsASCII = {
+    whisker: "-",
+    edgeL: "[",
+    edgeR: "]",
+    fill: "#",
+    median: "X",
+  };
+  const boxGlyphRamp = (bc) =>
+    bc === ASCII_BOX ? boxGlyphsASCII : boxGlyphsDefault;
+
+  const validateBoxSeries = (refValue) => {
+    const shape = () => [`⚠ box: expected [{x, min, q1, med, q3, max}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ box: empty series`];
+    const keys = ["min", "q1", "med", "q3", "max"];
+    for (const e of refValue) {
+      if (!e || typeof e !== "object") return shape();
+      if (!("x" in e)) return shape();
+      const vals = [];
+      for (const k of keys) {
+        if (!(k in e)) return shape();
+        if (typeof e[k] !== "number" || Number.isNaN(e[k])) return shape();
+        vals.push(e[k]);
+      }
+      for (let i = 1; i < vals.length; i++) {
+        if (vals[i] < vals[i - 1]) {
+          return [`⚠ box: invalid order: min ≤ q1 ≤ med ≤ q3 ≤ max`];
+        }
+      }
+    }
+    return null;
+  };
+
+  const renderBox = (series, bc) => {
+    const g = boxGlyphRamp(bc);
+    const n = series.length;
+    const labels = series.map((e) => String(e.x));
+    const mins = series.map((e) => e.min);
+    const q1s = series.map((e) => e.q1);
+    const meds = series.map((e) => e.med);
+    const q3s = series.map((e) => e.q3);
+    const maxs = series.map((e) => e.max);
+    let gMin = mins[0],
+      gMax = maxs[0];
+    for (let i = 0; i < n; i++) {
+      if (mins[i] < gMin) gMin = mins[i];
+      if (maxs[i] > gMax) gMax = maxs[i];
+    }
+    const budget = boxBudget;
+    const cellOf = (v) => {
+      if (gMax === gMin) return Math.floor(budget / 2);
+      let c = Math.round(((v - gMin) / (gMax - gMin)) * (budget - 1));
+      if (c < 0) c = 0;
+      if (c >= budget) c = budget - 1;
+      return c;
+    };
+    const labelW = Math.max(...labels.map((l) => displayWidth(l)), 0);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const cMin = cellOf(mins[i]);
+      let cQ1 = cellOf(q1s[i]);
+      const cMed = cellOf(meds[i]);
+      let cQ3 = cellOf(q3s[i]);
+      const cMax = cellOf(maxs[i]);
+      if (cQ3 < cQ1) [cQ1, cQ3] = [cQ3, cQ1];
+      const row = new Array(budget).fill(" ");
+      for (let c = cMin; c <= cQ1 && c < budget; c++) row[c] = g.whisker;
+      for (let c = cQ3; c <= cMax && c < budget; c++) row[c] = g.whisker;
+      for (let c = cQ1; c <= cQ3 && c < budget; c++) row[c] = g.fill;
+      row[cQ1] = g.edgeL;
+      row[cQ3] = g.edgeR;
+      row[cMed] = g.median;
+      out.push(
+        padRow(labels[i], labelW, "right", 0) + " " + bc.v + " " + row.join(""),
+      );
+    }
+    return out;
+  };
+
+  // ---- calendar (year-of-days heatmap) -----------------------------
+
+  const dowLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const calendarDateRe = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+  const validateCalendarSeries = (refValue) => {
+    const shape = () => [`⚠ calendar: expected [{date, y}]`];
+    if (!Array.isArray(refValue)) return shape();
+    if (refValue.length === 0) return [`⚠ calendar: empty series`];
+    for (const e of refValue) {
+      if (!e || typeof e !== "object") return shape();
+      if (!("date" in e) || !("y" in e)) return shape();
+      if (typeof e.date !== "string") return shape();
+      const m = calendarDateRe.exec(e.date);
+      if (!m) return [`⚠ calendar: invalid date: ${e.date}`];
+      const yr = +m[1],
+        mo = +m[2],
+        da = +m[3];
+      const t = new Date(Date.UTC(yr, mo - 1, da));
+      if (
+        t.getUTCFullYear() !== yr ||
+        t.getUTCMonth() + 1 !== mo ||
+        t.getUTCDate() !== da
+      ) {
+        return [`⚠ calendar: invalid date: ${e.date}`];
+      }
+      if (typeof e.y !== "number" || Number.isNaN(e.y)) return shape();
+      if (e.y < 0) return [`⚠ calendar: negative y`];
+    }
+    return null;
+  };
+
+  const renderCalendar = (series, bc) => {
+    const glyphs = heatmapGlyphs(bc);
+    const rampLevels = glyphs.length - 1;
+    const cells = [];
+    for (const e of series) {
+      const m = calendarDateRe.exec(e.date);
+      if (!m) continue;
+      const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+      cells.push({ t, y: e.y });
+    }
+    if (cells.length === 0) return [""];
+    let minT = cells[0].t,
+      maxT = cells[0].t,
+      maxY = cells[0].y;
+    for (const c of cells) {
+      if (c.t < minT) minT = c.t;
+      if (c.t > maxT) maxT = c.t;
+      if (c.y > maxY) maxY = c.y;
+    }
+    const dayMs = 86400000;
+    const anchorMs = minT.getTime() - minT.getUTCDay() * dayMs;
+    const totalDays = Math.floor((maxT.getTime() - anchorMs) / dayMs) + 1;
+    const weeks = Math.max(Math.ceil(totalDays / 7), 1);
+    const grid = Array.from({ length: 7 }, () => Array(weeks).fill(glyphs[0]));
+    for (const c of cells) {
+      const days = Math.floor((c.t.getTime() - anchorMs) / dayMs);
+      const col = Math.floor(days / 7);
+      const row = days % 7;
+      if (col < 0 || col >= weeks || row < 0 || row >= 7) continue;
+      let idx = maxY > 0 ? Math.round((c.y / maxY) * rampLevels) : 0;
+      if (idx < 1) idx = 1;
+      if (idx > rampLevels) idx = rampLevels;
+      grid[row][col] = glyphs[idx];
+    }
+    const labelW = 3;
+    return grid.map(
+      (r, i) => padRow(dowLabels[i], labelW, "left", 0) + " " + r.join(""),
+    );
+  };
+
   const chartRenderers = {
     text(refValue) {
       return [JSON.stringify(refValue)];
@@ -3079,6 +3537,46 @@
       const err = validateGanttSeries(refValue);
       if (err) return err;
       return renderGantt(refValue, bc, size);
+    },
+
+    // Line / area / scatter share the [{x,y}] shape from sparkline
+    // (numeric y, negative tolerated, duplicate x tolerated). Each
+    // emits its own user-typed wire prefix so diagnostics read
+    // `⚠ line:` / `⚠ area:` / `⚠ scatter:` per the user's source.
+    line(refValue, bc) {
+      const err = validateXYSeries("line", refValue);
+      if (err) return err;
+      return renderLine(refValue, bc);
+    },
+    area(refValue, bc) {
+      const err = validateXYSeries("area", refValue);
+      if (err) return err;
+      return renderArea(refValue, bc);
+    },
+    scatter(refValue, bc) {
+      const err = validateXYSeries("scatter", refValue);
+      if (err) return err;
+      return renderScatter(refValue, bc);
+    },
+    sbar(refValue, bc) {
+      const err = validateSBarSeries(refValue);
+      if (err) return err;
+      return renderSBar(refValue, bc);
+    },
+    bullet(refValue, bc) {
+      const err = validateBulletSeries(refValue);
+      if (err) return err;
+      return renderBullet(refValue, bc);
+    },
+    box(refValue, bc) {
+      const err = validateBoxSeries(refValue);
+      if (err) return err;
+      return renderBox(refValue, bc);
+    },
+    calendar(refValue, bc) {
+      const err = validateCalendarSeries(refValue);
+      if (err) return err;
+      return renderCalendar(refValue, bc);
     },
   };
 
