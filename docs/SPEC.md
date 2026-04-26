@@ -410,18 +410,23 @@ trade-off for full coverage). Unknown runes outside the printable
 ASCII range fall back to the `?` glyph. `theme: ascii` swaps the
 ANSI-shadow box-drawing glyphs for a `#` + space grid.
 
-The default banner glyphs intentionally mix narrow ASCII spaces
-(`U+0020`) with ambiguous-width box-drawing chars (`█`, `╗`, `═`,
-`║`, `╚`, `╝`). EAW-narrow rendering contexts (most Western
-terminals, the default for monospace web fonts) treat both as one
-cell each, and the output aligns. EAW-wide rendering contexts (CJK
-terminals, locale-aware monospace fonts) widen the ambiguous chars
-to two cells while leaving spaces at one cell, so banner rows with
-different space-to-block ratios end up at different visual widths
-— the frame `┌──...──┐` no longer lines up with the inner
-`│ ████ │` rows. Use `theme: ascii` for CJK / EAW-wide output:
-the ASCII font uses only narrow chars (`#` + space) and renders
-consistently in any East Asian width context.
+**East Asian Width caveat.** Every banner font that mixes narrow
+ASCII spaces (`U+0020`) with ambiguous-width chars (`█`, `╗`, `═`,
+`║`, `╚`, `╝`) misaligns under EAW-wide rendering. EAW-narrow
+contexts (most Western terminals, the default for monospace web
+fonts) treat both classes as one cell each, and the output aligns.
+EAW-wide contexts (CJK terminals, locale-aware monospace fonts)
+widen the ambiguous chars to two cells while leaving spaces at one
+cell, so banner rows with different space-to-block ratios end up at
+different visual widths — the frame `┌──...──┐` no longer lines up
+with the inner `│ ████ │` rows. This affects the default font and
+all three pure-`█` fonts (`monospace`, `digital`, `mini`) when
+rendered without `theme: ascii`. Use `theme: ascii` for CJK /
+EAW-wide output: the default font's ASCII variant (`bannerFontASCII`)
+uses only narrow chars (`#` + space) and the pure-`█` fonts'
+runtime `█→#` substitution produces an identically narrow output,
+so every banner family renders consistently in any East Asian width
+context under `theme: ascii`.
 
 v1 is literal-string only. A `@ref` inside a `| banner` box is
 silently ignored — a future release will resolve `@ref` to its

@@ -134,3 +134,73 @@ func TestBannerFontASCIIIsPureASCII(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderBannerASCIIThemeIsPureASCII covers the EAW-uniform
+// guarantee end-to-end: render the worked-example "Pylon" through
+// every banner font under `theme: ascii` and assert the output
+// contains zero chars >= 0x80. This verifies both the table palette
+// (already asserted by TestBannerFontMonospace/Digital/Mini) and
+// the renderer's `█→#` substitution path actually deliver pure-ASCII
+// output. A regression in either layer (a non-`█` glyph leaking
+// through, or the substitution silently dropping a row) trips this
+// test. SPEC promises this property for every font under ascii
+// theme; this test is the runtime enforcement.
+func TestRenderBannerASCIIThemeIsPureASCII(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"default", "---\ntheme: ascii\n---\n[ Pylon | banner ]"},
+		{"monospace", "---\ntheme: ascii\nbanner: monospace\n---\n[ Pylon | banner ]"},
+		{"digital", "---\ntheme: ascii\n---\n[ Pylon | banner:digital ]"},
+		{"mini", "---\ntheme: ascii\n---\n[ Pylon | banner:mini ]"},
+	}
+	for _, tc := range cases {
+		out := RenderASCII(Parse(tc.src))
+		for i, row := range strings.Split(out, "\n") {
+			for j, c := range row {
+				if c >= 0x80 {
+					t.Errorf("[%s] row %d col %d: rune %q (U+%04X) is non-ASCII under theme:ascii; "+
+						"every banner font must yield pure-ASCII output under ascii theme to stay EAW-uniform",
+						tc.name, i, j, c, c)
+				}
+			}
+		}
+	}
+}
+
+// TestRenderBannerASCIIThemeRowsAreUniformWidth is the direct
+// EAW-alignment guarantee: render the worked-example "Pylon"
+// through every banner font under `theme: ascii` and assert all
+// six rendered banner rows have the same rune count. Equal
+// rune-count + pure ASCII (the previous test) ⇒ equal display
+// width in any East Asian width context. The default font without
+// `theme: ascii` deliberately fails this property — see issue #1 —
+// which is why this test only covers the ascii-theme paths.
+func TestRenderBannerASCIIThemeRowsAreUniformWidth(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"default", "---\ntheme: ascii\n---\n[ Pylon | banner ]"},
+		{"monospace", "---\ntheme: ascii\nbanner: monospace\n---\n[ Pylon | banner ]"},
+		{"digital", "---\ntheme: ascii\n---\n[ Pylon | banner:digital ]"},
+		{"mini", "---\ntheme: ascii\n---\n[ Pylon | banner:mini ]"},
+	}
+	for _, tc := range cases {
+		out := RenderASCII(Parse(tc.src))
+		rows := strings.Split(out, "\n")
+		if len(rows) == 0 {
+			t.Errorf("[%s]: empty render", tc.name)
+			continue
+		}
+		want := utf8.RuneCountInString(rows[0])
+		for i, row := range rows {
+			if got := utf8.RuneCountInString(row); got != want {
+				t.Errorf("[%s] row %d width %d, want %d (row=%q); "+
+					"banner rows under theme:ascii must be uniform-width to stay EAW-aligned",
+					tc.name, i, got, want, row)
+			}
+		}
+	}
+}
