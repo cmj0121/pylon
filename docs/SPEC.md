@@ -405,6 +405,19 @@ Input is uppercased before lookup; the supported set is `A-Z`,
 `?` glyph. `theme: ascii` swaps the ANSI-shadow box-drawing glyphs
 for a `#` + space grid.
 
+The default banner glyphs intentionally mix narrow ASCII spaces
+(`U+0020`) with ambiguous-width box-drawing chars (`█`, `╗`, `═`,
+`║`, `╚`, `╝`). EAW-narrow rendering contexts (most Western
+terminals, the default for monospace web fonts) treat both as one
+cell each, and the output aligns. EAW-wide rendering contexts (CJK
+terminals, locale-aware monospace fonts) widen the ambiguous chars
+to two cells while leaving spaces at one cell, so banner rows with
+different space-to-block ratios end up at different visual widths
+— the frame `┌──...──┐` no longer lines up with the inner
+`│ ████ │` rows. Use `theme: ascii` for CJK / EAW-wide output:
+the ASCII font uses only narrow chars (`#` + space) and renders
+consistently in any East Asian width context.
+
 v1 is literal-string only. A `@ref` inside a `| banner` box is
 silently ignored — a future release will resolve `@ref` to its
 value and render that instead.

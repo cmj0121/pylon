@@ -50,3 +50,26 @@ func checkBannerGlyph(t *testing.T, name string, r rune, glyph [6]string) {
 		}
 	}
 }
+
+// TestBannerFontASCIIIsPureASCII pins that bannerFontASCII contains
+// only printable ASCII (no chars >= 0x80). The default font mixes
+// EAW-narrow ASCII spaces with EAW-ambiguous box-drawing chars, which
+// produces visually misaligned rows when rendered in CJK / EAW-wide
+// contexts (see SPEC banner section). The ASCII font is the
+// recommended workaround precisely because every char is narrow —
+// rows render at uniform visual width in any East Asian width mode.
+// Adding a non-ASCII char to bannerFontASCII would silently break
+// that property; this test guards against the regression.
+func TestBannerFontASCIIIsPureASCII(t *testing.T) {
+	for r, glyph := range bannerFontASCII {
+		for i, row := range glyph {
+			for _, c := range row {
+				if c >= 0x80 {
+					t.Errorf("bannerFontASCII[%q] row %d: rune %q (U+%04X) is non-ASCII; "+
+						"the ASCII font is the EAW-uniform fallback and must stay narrow-only",
+						r, i, c, c)
+				}
+			}
+		}
+	}
+}
