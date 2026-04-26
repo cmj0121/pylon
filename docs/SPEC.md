@@ -401,10 +401,14 @@ an error.
 ```
 
 `banner` renders the box's literal text as 6-row block letters.
-Input is uppercased before lookup; the supported set is `A-Z`,
-`0-9`, space, and `. , ! ? - ' "`. Unknown runes fall back to the
-`?` glyph. `theme: ascii` swaps the ANSI-shadow box-drawing glyphs
-for a `#` + space grid.
+Input is uppercased before lookup. Default and `ascii`-theme
+banners cover every printable ASCII codepoint from 0x20 (space)
+through 0x7E (tilde) — the alphanumerics use the pyfiglet
+`ansi_shadow` style and the symbols use the same uniform block
+shapes as `banner: monospace` (visual mismatch is a known
+trade-off for full coverage). Unknown runes outside the printable
+ASCII range fall back to the `?` glyph. `theme: ascii` swaps the
+ANSI-shadow box-drawing glyphs for a `#` + space grid.
 
 v1 is literal-string only. A `@ref` inside a `| banner` box is
 silently ignored — a future release will resolve `@ref` to its
@@ -416,10 +420,10 @@ The `banner: monospace` frontmatter key switches the renderer to a
 uniform-width `█`-based block-letter font where every glyph occupies
 the same cell width. Use it when you want grid-aligned banner output —
 columns line up cleanly across letters, which the ANSI-shadow default
-does not guarantee. Coverage extends beyond the default font's
-alphanumeric+punct set to every printable ASCII codepoint from
-0x20 (space) through 0x7E (tilde). Unknown runes outside that range
-still fall back to the `?` glyph.
+does not guarantee. The covered rune set matches the default font:
+every printable ASCII codepoint from 0x20 (space) through 0x7E
+(tilde). Unknown runes outside that range still fall back to the `?`
+glyph.
 
 ```pylon
 ---
