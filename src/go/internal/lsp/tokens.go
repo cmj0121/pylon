@@ -1,14 +1,14 @@
-// Semantic tokens for pylon sources — a partial MVP.
+// Semantic tokens for pylon sources — partial coverage.
 //
-// This commit (U7) emits tokens for three classes the U1a/U1b AST
-// already span-tracks:
+// Today this emits tokens for three classes the AST already
+// span-tracks:
 //
 //   - `&ref`  → variable
 //   - `@ref`  → variable + readonly modifier
 //   - `[`, `]`, `(`, `)` → operator (single-char per bracket)
 //
-// DEFERRED to feat/pylon-lsp-ux (require source-scan logic or new
-// AST spans the engine does not track today):
+// Deferred (require source-scan logic or new AST spans the engine
+// does not track today):
 //
 //   - frontmatter key / number / string tokens
 //   - edge arrows `->`, `<-`, `<->`, `-->`, etc.
@@ -38,7 +38,7 @@ import (
 // ADD-ONLY: reorders / removals break editor clients that cached the
 // legend from a previous initialize response. Future commits append.
 //
-// Growth path (entries to add when U7's deferred classes land):
+// Growth path (entries to add when the deferred classes above land):
 //
 //	"property"   for pylonFMKey
 //	"string"     for pylonFMString

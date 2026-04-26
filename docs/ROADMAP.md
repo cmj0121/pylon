@@ -19,11 +19,11 @@ shipped.
 
 ## Functional parity
 
-1. **Go CLI chart rendering — CLOSED.** `| bar`, `| hbar`, `| vbar`,
-   and `| text` render in the Go CLI as of `feat/go-chart-renderers`,
-   with 13 chart fixtures locked byte-for-byte against the JS
-   reference in the parity gate. The "same source renders identically"
-   promise now holds for flow diagrams and charts alike.
+1. **Go CLI chart rendering — CLOSED.** All renderers ship in the Go
+   CLI; the parity gate (`scripts/pylon-parity.sh`) locks every
+   fixture under `src/go/pkg/pylon/testdata/` byte-for-byte against
+   the JS reference. The "same source renders identically" promise
+   holds for flow diagrams and charts alike.
    Status: **closed**.
    Ref: [`../src/go/pkg/pylon/render_chart.go`](../src/go/pkg/pylon/render_chart.go).
 
@@ -59,12 +59,12 @@ shipped.
    Ref: [`../src/go/cmd/pylon/main.go`](../src/go/cmd/pylon/main.go),
    [`LSP.md` §CLI diagnostic mode](LSP.md#cli-diagnostic-mode).
 
-7. **`| banner` JS parity — CLOSED.** The ANSI-shadow block-letter
-   renderer now ships in both `src/go/pkg/pylon/render_banner.go`
-   and `src/js/pylon.js` (font tables inlined byte-for-byte). The
-   six banner fixtures are back under `src/go/pkg/pylon/testdata/`
-   and participate in `scripts/pylon-parity.sh`, bringing the
-   parity corpus to 31 fixtures. Shipped on `feat/banner-js`.
+7. **`| banner` JS parity — CLOSED.** The block-letter banner
+   renderer ships in both `src/go/pkg/pylon/render_banner.go` and
+   `src/js/pylon.js` with five font tables (default, ASCII,
+   monospace, digital, mini) inlined byte-for-byte. Banner
+   fixtures sit under `src/go/pkg/pylon/testdata/` and participate
+   in `scripts/pylon-parity.sh`. Shipped on `feat/banner-js`.
    Status: **closed**.
    Ref: [`../src/go/pkg/pylon/render_banner.go`](../src/go/pkg/pylon/render_banner.go),
    [`../src/js/pylon.js`](../src/js/pylon.js).

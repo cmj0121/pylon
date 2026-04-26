@@ -11,12 +11,8 @@ import (
 // Handlers is the transport-free surface every LSP feature attaches to.
 // Each method takes a URI string, reads from the Store, and returns a
 // protocol-shaped response. No glsp.Context reaches here — tests seed
-// a Store and call the methods directly.
-//
-// The method set is deliberately over-provisioned for U4: the feature
-// units (U5 diagnostics, U6 document symbols, U7 semantic tokens) each
-// replace one method's body. For U4 every method returns an empty /
-// nil result so the server stays a correct but feature-less scaffold.
+// a Store and call the methods directly. Today's surface: diagnostics,
+// document symbols, semantic tokens.
 type Handlers struct {
 	Store *Store
 }
@@ -160,9 +156,8 @@ func sortSymbolsByStart(syms []protocol.DocumentSymbol) {
 // SemanticTokens returns the LSP-wire-encoded token stream for uri.
 // Partial implementation: brackets plus &/@ references only; see
 // internal/lsp/tokens.go for the legend and deferred-class list.
-// Keeps the U5/U6 "non-nil empty for known clean doc, nil-ish for
-// unknown URI" convention — but LSP clients expect a value, so
-// unknown URIs still get an empty Data slice instead of nil.
+// Convention across this package: known clean doc → non-nil empty;
+// unknown URI → also non-nil empty (LSP clients expect a value).
 func (h *Handlers) SemanticTokens(uri string) *protocol.SemanticTokens {
 	doc, ok := h.Store.Get(uri)
 	if !ok {
