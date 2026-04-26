@@ -416,7 +416,10 @@ The `banner: monospace` frontmatter key switches the renderer to a
 uniform-width `█`-based block-letter font where every glyph occupies
 the same cell width. Use it when you want grid-aligned banner output —
 columns line up cleanly across letters, which the ANSI-shadow default
-does not guarantee.
+does not guarantee. Coverage extends beyond the default font's
+alphanumeric+punct set to every printable ASCII codepoint from
+0x20 (space) through 0x7E (tilde). Unknown runes outside that range
+still fall back to the `?` glyph.
 
 ```pylon
 ---
